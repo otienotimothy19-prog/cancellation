@@ -53,8 +53,14 @@ jobs:
     environment_slug: python
     run_command: python manage.py migrate --noinput
 
+# Attach the EXISTING managed Postgres cluster "cancellation" (no new cluster is created).
+# ${db.DATABASE_URL} above is filled from it. If you create a dedicated database/user later
+# (e.g. imoth_cancellations / imoth), change db_name and db_user to match.
+# Also add this app to the cluster's Trusted Sources, or connections are refused.
 databases:
   - name: db
     engine: PG
-    version: "16"
     production: true
+    cluster_name: cancellation
+    db_name: defaultdb
+    db_user: doadmin
