@@ -25,7 +25,8 @@ class CoverChoiceForm(forms.Form):
     start_date = forms.DateField(required=False, widget=DATE)
     end_date = forms.DateField(required=False, widget=DATE)
 
-    NEW_FIELDS = ["client_name", "policy_number", "insurer", "premium", "start_date", "end_date"]
+    NEW_FIELDS = ["client_name", "policy_number", "insurer"]
+    REFUND_FIELDS = ["premium", "start_date", "end_date"]  # optional, but all three or none
 
     def clean(self):
         data = super().clean()
@@ -34,9 +35,14 @@ class CoverChoiceForm(forms.Form):
         for name in self.NEW_FIELDS:
             if data.get(name) in (None, ""):
                 self.add_error(name, "Required for a new cover.")
+        given = [n for n in self.REFUND_FIELDS if data.get(n) not in (None, "")]
+        if given and len(given) < len(self.REFUND_FIELDS):
+            for name in self.REFUND_FIELDS:
+                if name not in given:
+                    self.add_error(name, "Fill in premium and both cover dates to calculate the refund, or leave all three blank.")
         if self.errors:
             return data
-        if data["end_date"] <= data["start_date"]:
+        if data.get("start_date") and data.get("end_date") and data["end_date"] <= data["start_date"]:
             self.add_error("end_date", "End date must be after the start date.")
         if Cover.objects.filter(insurer=data["insurer"], policy_number__iexact=data["policy_number"].strip()).exists():
             self.add_error("policy_number", "This policy already exists for that insurer — select it above instead.")
@@ -76,7 +82,7 @@ class CaseForm(forms.ModelForm):
     def clean_effective_date(self):
         value = self.cleaned_data.get("effective_date")
         cover = self.cover
-        if value and cover and not (cover.start_date <= value <= cover.end_date):
+        if value and cover and cover.has_cover_period and not (cover.start_date <= value <= cover.end_date):
             raise ValidationError(
                 f"Effective date must fall within the cover period ({cover.start_date:%d %b %Y} – {cover.end_date:%d %b %Y})."
             )

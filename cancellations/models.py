@@ -95,9 +95,10 @@ class Cover(models.Model):
     policy_number = models.CharField(max_length=100)
     insurer = models.ForeignKey(Insurer, on_delete=models.PROTECT, related_name="covers")
     asset_reference = models.CharField("vehicle / asset reference", max_length=200, blank=True)
-    premium = models.DecimalField(max_digits=12, decimal_places=2)
-    start_date = models.DateField()
-    end_date = models.DateField()
+    # Optional: only used to calculate the pro-rata refund, which needs all three.
+    premium = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -109,6 +110,14 @@ class Cover(models.Model):
 
     def __str__(self):
         return f"{self.policy_number} – {self.client_name} ({self.insurer})"
+
+    @property
+    def has_cover_period(self):
+        return bool(self.start_date and self.end_date)
+
+    @property
+    def can_calculate_refund(self):
+        return self.premium is not None and self.has_cover_period
 
     def clean(self):
         if self.start_date and self.end_date and self.end_date <= self.start_date:

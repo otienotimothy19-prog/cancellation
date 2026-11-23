@@ -78,7 +78,7 @@ def review_inbound_email(email, classification, actor, note="", confirmed_effect
         if not confirmed_effective_date:
             raise TransitionError("Enter the effective date the insurer confirmed.")
         cover = email.case.cover if email.case_id else None
-        if cover and not (cover.start_date <= confirmed_effective_date <= cover.end_date):
+        if cover and cover.has_cover_period and not (cover.start_date <= confirmed_effective_date <= cover.end_date):
             raise TransitionError(
                 f"Confirmed effective date must fall within the cover period "
                 f"({cover.start_date:%d %b %Y} – {cover.end_date:%d %b %Y})."
@@ -118,19 +118,23 @@ def _confirm(case, email, actor, note, effective_date, certificate_doc, certific
     from .refunds import refund_breakdown
 
     cover = case.cover
-    refund = refund_breakdown(cover, effective_date)
+    refund = refund_breakdown(cover, effective_date)  # None when premium / cover dates were not recorded
+    refund_note = (
+        f"Pro-rata refund {refund['amount']} = {cover.premium} × {refund['unearned_days']}/{refund['total_days']} days."
+        if refund else "No refund calculated (premium and cover dates not recorded)."
+    )
+    amount = refund["amount"] if refund else None
     locked = transition(
         case, S.CONFIRMED, actor, action="MARKED_CONFIRMED", email=email,
         note=(f"Insurer confirmed effective {effective_date:%d %b %Y}"
               + (f" (requested {case.effective_date:%d %b %Y})" if case.effective_date != effective_date else "")
-              + f". Pro-rata refund {refund['amount']} = {cover.premium} × {refund['unearned_days']}"
-              + f"/{refund['total_days']} days." + (f" {note}" if note else "")),
+              + f". {refund_note}" + (f" {note}" if note else "")),
     )
     now = timezone.now()
     CancellationCase.objects.filter(pk=case.pk).update(
-        confirmed_effective_date=effective_date, confirmed_at=now, refund_amount=refund["amount"], updated_at=now,
+        confirmed_effective_date=effective_date, confirmed_at=now, refund_amount=amount, updated_at=now,
     )
-    case.confirmed_effective_date, case.confirmed_at, case.refund_amount = effective_date, now, refund["amount"]
+    case.confirmed_effective_date, case.confirmed_at, case.refund_amount = effective_date, now, amount
 
     if cover.status != cover.Status.CANCELLED:
         cover.status = cover.Status.CANCELLED

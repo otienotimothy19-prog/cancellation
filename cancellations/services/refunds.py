@@ -36,6 +36,9 @@ def pro_rata_refund(premium, start_date, end_date, effective_date):
 
 
 def refund_breakdown(cover, effective_date):
+    """Refund details, or None when the cover has no premium / cover period recorded."""
+    if not cover.can_calculate_refund:
+        return None
     total = cover_days(cover.start_date, cover.end_date)
     days = unearned_days(cover.start_date, cover.end_date, effective_date)
     amount = pro_rata_refund(cover.premium, cover.start_date, cover.end_date, effective_date)

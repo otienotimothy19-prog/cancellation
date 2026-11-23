@@ -277,7 +277,7 @@ def case_detail(request, pk):
         "follow_up_form": _follow_up_form(case) if case.status == S.QUERY else None,
         "requested_refund": (
             pro_rata_refund(case.cover.premium, case.cover.start_date, case.cover.end_date, case.effective_date)
-            if case.effective_date else None
+            if case.effective_date and case.cover.can_calculate_refund else None
         ),
     })
 
@@ -414,7 +414,8 @@ def email_review(request, email_id):
             case.refresh_from_db()
             msg = f"Reply recorded; case is now {case.get_status_display()}."
             if case.confirmed_at and case.status in (S.CONFIRMED, S.CLOSED):
-                msg += f" Cover cancelled; pro-rata refund {case.refund_amount}."
+                msg += " Cover cancelled" + (
+                    f"; pro-rata refund {case.refund_amount}." if case.refund_amount is not None else ".")
                 if case.status == S.CONFIRMED:
                     msg += " Upload the cancellation certificate / credit note to close it."
                 else:

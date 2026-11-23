@@ -137,9 +137,9 @@
                   <div class="field">
                     <label for="ced-{{ e.pk }}">Effective date confirmed by the insurer<span class="req" aria-hidden="true">*</span></label>
                     <input id="ced-{{ e.pk }}" type="date" name="confirmed_effective_date" value="{{ case.effective_date|date:'Y-m-d' }}"
-                           min="{{ case.cover.start_date|date:'Y-m-d' }}" max="{{ case.cover.end_date|date:'Y-m-d' }}">
+                           {% if case.cover.has_cover_period %}min="{{ case.cover.start_date|date:'Y-m-d' }}" max="{{ case.cover.end_date|date:'Y-m-d' }}"{% endif %}>
                   </div>
-                  <div class="help" style="align-self:end">The pro-rata refund of unearned premium is calculated from this date{% if requested_refund is not None %} ({{ requested_refund }} at the requested date){% endif %}. The cover will be marked cancelled.</div>
+                  <div class="help" style="align-self:end">{% if case.cover.can_calculate_refund %}The pro-rata refund of unearned premium is calculated from this date{% if requested_refund is not None %} ({{ requested_refund }} at the requested date){% endif %}. {% endif %}The cover will be marked cancelled.</div>
                 </div>
                 <div class="field" style="margin-top:14px">
                   <span class="label">Cancellation certificate / credit note</span>
@@ -255,8 +255,8 @@
           <dt>Policy no.</dt><dd>{{ case.cover.policy_number }}</dd>
           <dt>Insurer</dt><dd>{{ case.cover.insurer }}<br><span class="muted small">{{ case.cover.insurer.cancellation_email }}</span></dd>
           <dt>Vehicle / asset</dt><dd>{{ case.cover.asset_reference|default:"—" }}</dd>
-          <dt>Premium</dt><dd>{{ case.cover.premium }}</dd>
-          <dt>Cover period</dt><dd>{{ case.cover.start_date|date:"d M Y" }} – {{ case.cover.end_date|date:"d M Y" }}</dd>
+          <dt>Premium</dt><dd>{% if case.cover.premium is not None %}{{ case.cover.premium|floatformat:"2g" }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
+          <dt>Cover period</dt><dd>{% if case.cover.has_cover_period %}{{ case.cover.start_date|date:"d M Y" }} – {{ case.cover.end_date|date:"d M Y" }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
         </dl>
       </div>
     </section>
@@ -280,10 +280,14 @@
       <div class="card__head"><h2>{% icon "banknote" %}Confirmation &amp; refund</h2></div>
       <div class="card__body">
         {% if case.confirmed_at %}
+          {% if case.refund_amount is not None %}
           <div class="refund" style="margin-bottom:14px">
             <span class="muted small">Pro-rata refund of unearned premium</span>
-            <span class="refund__amount">{{ case.refund_amount }}</span>
+            <span class="refund__amount">{{ case.refund_amount|floatformat:"2g" }}</span>
           </div>
+          {% else %}
+          <p class="muted small" style="margin:0 0 14px">No refund calculated: premium and cover dates were not recorded.</p>
+          {% endif %}
           <dl class="kv kv--compact">
             <dt>Effective</dt><dd><strong>{{ case.confirmed_effective_date|date:"d M Y" }}</strong>{% if case.confirmed_effective_date != case.effective_date %}<br><span class="muted small">requested {{ case.effective_date|date:"d M Y" }}</span>{% endif %}</dd>
             <dt>Confirmed</dt><dd>{{ case.confirmed_at|date:"d M Y H:i" }}</dd>
