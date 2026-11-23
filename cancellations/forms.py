@@ -158,11 +158,7 @@ class ReviewForm(forms.Form):
             validate_uploaded_file(f)
         return f
 
-    def clean(self):
-        data = super().clean()
-        if data.get("classification") == "CONFIRMATION" and not data.get("confirmed_effective_date"):
-            self.add_error("confirmed_effective_date", "Enter the effective date the insurer confirmed.")
-        return data
+    # No date is required here: when it is left out, a confirmation takes the case's effective date (see email_review).
 
 
 class FollowUpForm(forms.Form):

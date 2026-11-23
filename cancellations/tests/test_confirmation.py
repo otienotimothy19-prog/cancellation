@@ -128,6 +128,18 @@ class ConfirmTests(TestCase):
         self.assertEqual(self.case.status, S.CLOSED)
         self.assertTrue(self.case.has_certificate)
 
+    def test_simple_review_confirms_with_case_effective_date(self):
+        # The review box only asks for the outcome: no date, certificate or note.
+        self.client.force_login(self.user)
+        page = self.client.get(self.case.get_absolute_url())
+        self.assertNotContains(page, 'name="confirmed_effective_date"')
+        self.assertNotContains(page, 'name="certificate_doc"')
+        self.assertContains(page, "Record decision")
+        self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {"classification": "CONFIRMATION"})
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.CONFIRMED)
+        self.assertEqual(self.case.confirmed_effective_date, self.case.effective_date)
+
     def test_confirm_without_certificate_stays_open_until_upload(self):
         self.client.force_login(self.user)
         self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {
@@ -157,10 +169,3 @@ class ConfirmTests(TestCase):
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, S.REJECTED)
 
-    def test_confirm_via_page_without_date_is_refused(self):
-        self.client.force_login(self.user)
-        r = self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]),
-                             {"classification": "CONFIRMATION"}, follow=True)
-        self.assertContains(r, "Enter the effective date the insurer confirmed")
-        self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.SENT)

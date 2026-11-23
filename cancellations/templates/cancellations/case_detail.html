@@ -128,32 +128,11 @@
               {% endif %}
             </div>
             {% if e.direction == "IN" and e.classification == "UNREVIEWED" and case.status != "CLOSED" %}
-            <form method="post" enctype="multipart/form-data" action="{% url 'cancellations:email_review' e.pk %}" class="review-box review-form">
+            <form method="post" action="{% url 'cancellations:email_review' e.pk %}" class="review-box review-form">
               {% csrf_token %}
               <h3>{% icon "list-checks" 16 %}Review this reply</h3>
               <div class="choice-list">{{ review_form.classification }}</div>
-              <div class="confirm-fields" hidden>
-                <div class="form-grid">
-                  <div class="field">
-                    <label for="ced-{{ e.pk }}">Effective date confirmed by the insurer<span class="req" aria-hidden="true">*</span></label>
-                    <input id="ced-{{ e.pk }}" type="date" name="confirmed_effective_date" value="{{ case.effective_date|date:'Y-m-d' }}"
-                           {% if case.cover.has_cover_period %}min="{{ case.cover.start_date|date:'Y-m-d' }}" max="{{ case.cover.end_date|date:'Y-m-d' }}"{% endif %}>
-                  </div>
-                  <div class="help" style="align-self:end">{% if case.cover.can_calculate_refund %}The pro-rata refund of unearned premium is calculated from this date{% if requested_refund is not None %} ({{ requested_refund }} at the requested date){% endif %}. {% endif %}The cover will be marked cancelled.</div>
-                </div>
-                <div class="field" style="margin-top:14px">
-                  <span class="label">Cancellation certificate / credit note</span>
-                  <div class="choice-list"><ul>
-                    {% for d in e.documents.all %}
-                      <li><label><input type="radio" name="certificate_doc" value="{{ d.pk }}"> {{ d.original_name }} <span class="muted small">(attached to this email)</span></label></li>
-                    {% endfor %}
-                    <li><label><input type="radio" name="certificate_doc" value="" checked> {% if e.documents.all %}None of these / not received yet{% else %}Not received yet{% endif %}</label></li>
-                  </ul></div>
-                </div>
-                <div style="margin-top:14px">{% include "components/dropzone.html" with field=review_form.certificate_file label="…or upload the certificate / credit note" %}</div>
-                <p class="help" style="margin:10px 0 0">Once the certificate is stored the case closes automatically.</p>
-              </div>
-              <div class="field" style="margin-top:14px">{{ review_form.note.label_tag }}{{ review_form.note }}</div>
+              <p class="help" style="margin:10px 0 0">Confirmed uses the case's effective date ({{ case.effective_date|date:"d M Y" }}{% if case.effective_time %} at {{ case.effective_time|time:"H:i" }}{% endif %}) and marks the cover cancelled. Upload the certificate / credit note under Supporting documents; the case then closes automatically.</p>
               <div class="btn-row" style="justify-content:flex-end;margin-top:14px">
                 <button class="btn btn-primary" data-busy-label="Saving…">{% icon "check-circle" 16 %}<span data-label>Record decision</span></button>
               </div>
@@ -308,17 +287,4 @@
     </section>
   </aside>
 </div>
-{% endblock %}
-{% block scripts %}
-<script>
-  document.querySelectorAll(".review-form").forEach(function (form) {
-    const box = form.querySelector(".confirm-fields");
-    const sync = function () {
-      const picked = form.querySelector("input[name=classification]:checked");
-      box.hidden = !(picked && picked.value === "CONFIRMATION");
-    };
-    form.querySelectorAll("input[name=classification]").forEach(r => r.addEventListener("change", sync));
-    sync();
-  });
-</script>
 {% endblock %}

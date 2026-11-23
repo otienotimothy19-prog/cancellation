@@ -423,7 +423,8 @@ def email_review(request, email_id):
         try:
             case = review_inbound_email(
                 email, data["classification"], request.user, data["note"],
-                confirmed_effective_date=data["confirmed_effective_date"],
+                # The review form no longer asks for a date: a confirmation takes the case's (locked) effective date.
+                confirmed_effective_date=data["confirmed_effective_date"] or email.case.effective_date,
                 certificate_doc=cert_doc, certificate_upload=data["certificate_file"],
             )
             case.refresh_from_db()
@@ -432,7 +433,7 @@ def email_review(request, email_id):
                 msg += " Cover cancelled" + (
                     f"; pro-rata refund {case.refund_amount}." if case.refund_amount is not None else ".")
                 if case.status == S.CONFIRMED:
-                    msg += " Upload the cancellation certificate / credit note to close it."
+                    msg += " Upload the cancellation certificate / credit note under Supporting documents to close it."
                 else:
                     msg += " Certificate stored, so the case is closed."
             messages.success(request, msg)
