@@ -193,6 +193,25 @@ class SenderVerificationTests(TestCase):
         ))
         self.assertIsNone(email.case)
 
+    def test_results_inside_comments_are_ignored(self):
+        # Zoho style: an upstream hop's dmarc=pass carried inside the ARC comment is not our verdict.
+        email, _ = ingest(inbound(
+            subject=f"Re: {self.case.reference}", envelope_sender="",
+            headers={"Authentication-Results": "mx.provider.test; dkim=pass; spf=none; "
+                     "arc=pass (i=1 dmarc=pass fromdomain:insurer.test (nested dmarc=pass))"},
+        ))
+        self.assertIsNone(email.case)
+        self.assertIn("no SPF/DMARC pass", email.match_note)
+
+    def test_zoho_style_header_with_aligned_spf_passes(self):
+        email, _ = ingest(inbound(
+            subject=f"Re: {self.case.reference}", envelope_sender="ops@insurer.test",
+            headers={"Authentication-Results": "mx.provider.test; dkim=pass; "
+                     "spf=pass (provider: domain of insurer.test designates 1.2.3.4 as permitted sender) "
+                     "smtp.mailfrom=ops@insurer.test; arc=pass (i=1 dmarc=pass fromdomain:insurer.test)"},
+        ))
+        self.assertEqual(email.case, self.case)
+
     def test_cc_list_and_cancellation_address_are_known_senders(self):
         insurer = self.case.cover.insurer
         insurer.known_sender_addresses = ""

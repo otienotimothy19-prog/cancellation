@@ -209,13 +209,52 @@ def _first(msg, name):
 PROVIDER_SPF_HEADERS = {"postmark": "Received-SPF", "mailgun": "X-Mailgun-Spf"}
 
 
+def _strip_comments(value):
+    """Remove RFC 5322 (parenthesised) comments, including nested ones and quoted text.
+
+    Providers put free text in comments, e.g. Zoho writes "arc=pass (i=1 dmarc=pass ...)":
+    that inner dmarc=pass is an upstream hop's claim carried in the ARC chain, not our
+    server's verdict, so it must never be read as a result.
+    """
+    out, depth, quoted, escaped = [], 0, False, False
+    for ch in value:
+        if escaped:
+            escaped = False
+            if depth == 0:
+                out.append(ch)
+            continue
+        if ch == "\\":
+            escaped = True
+            if depth == 0:
+                out.append(ch)
+            continue
+        if quoted:
+            if ch == '"':
+                quoted = False
+            if depth == 0:
+                out.append(ch)
+            continue
+        if ch == '"' and depth == 0:
+            quoted = True
+            out.append(ch)
+        elif ch == "(":
+            depth += 1
+        elif ch == ")" and depth:
+            depth -= 1
+            if depth == 0:
+                out.append(" ")
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
 def _trusted_auth_results(msg):
     """Authentication-Results headers written by our own receiving server (matching authserv-id)."""
     servid = (getattr(settings, "INBOUND_AUTHSERV_ID", "") or "").strip().lower()
     header = getattr(settings, "INBOUND_AUTH_HEADER", "Authentication-Results") or "Authentication-Results"
     top = _first(msg, header)
     # ARC-Authentication-Results starts with an instance tag: "i=1; mx.zohomail.com; ..."
-    body = re.sub(r"^\s*i=\d+\s*;", "", top)
+    body = re.sub(r"^\s*i=\d+\s*;", "", _strip_comments(top))
     # Only the topmost header, and only if our server wrote it: lower copies (even ones
     # claiming our authserv-id) may have been supplied by the sender.
     if not servid or body.split(";", 1)[0].strip().lower() != servid:
