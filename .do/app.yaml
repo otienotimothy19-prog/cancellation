@@ -1,5 +1,5 @@
 # DigitalOcean App Platform spec (example). Review before use:  doctl apps create --spec .do/app.yaml
-# Set SECRET_KEY, MAILBOX_PASSWORD, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as encrypted
+# Set SECRET_KEY, MAILBOX_PASSWORD, EXPORT_API_TOKENS, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as encrypted
 # values in the App Platform UI after creating the app.
 name: imoth-cancellations
 region: fra
@@ -15,6 +15,9 @@ envs:
   - { key: MAILBOX_PASSWORD, scope: RUN_TIME, type: SECRET }
   - { key: SMTP_HOST, scope: RUN_TIME, value: smtppro.zoho.com }
   - { key: IMAP_HOST, scope: RUN_TIME, value: imappro.zoho.com }
+  - { key: EXPORT_API_TOKENS, scope: RUN_TIME, type: SECRET }
+  - { key: APP_BASE_URL, scope: RUN_TIME, value: "${APP_URL}" }
+  - { key: SLA_ALERT_EMAIL, scope: RUN_TIME, value: cancellation@imoth.co.ke }
   - { key: AWS_STORAGE_BUCKET_NAME, scope: RUN_TIME, value: imoth-cancellations }
   - { key: AWS_S3_ENDPOINT_URL, scope: RUN_TIME, value: "https://fra1.digitaloceanspaces.com" }
   - { key: AWS_S3_REGION_NAME, scope: RUN_TIME, value: fra1 }
@@ -36,10 +39,10 @@ services:
       - { key: CSRF_TRUSTED_ORIGINS, scope: RUN_TIME, value: "${APP_URL}" }
 
 workers:
-  - name: mail-worker
+  - name: worker   # mailbox polling + SLA reminders / STALE flags
     github: { repo: YOUR_ORG/imoth-cancellations, branch: main, deploy_on_push: true }
     environment_slug: python
-    run_command: python manage.py poll_mailbox --loop
+    run_command: python manage.py run_worker
     instance_size_slug: apps-s-1vcpu-0.5gb
     instance_count: 1   # keep at exactly one
 

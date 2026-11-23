@@ -23,7 +23,7 @@ A small, standalone web app for one staff member to cancel insurance covers. You
 ```
 DRAFT ──send──▶ SENT ──staff review──▶ CONFIRMED | REJECTED | QUERY ──▶ CLOSED
                                               QUERY ──▶ CONFIRMED | REJECTED
-(+ STALE flag, Phase 2)
+SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (cleared by a reply)
 ```
 
 1. **Create.** You pick an existing cover or enter a new one (client, policy number, insurer, vehicle/asset, premium, dates). You also choose a reason code, set the effective date (it must fall inside the cover period) and attach the supporting document. The case is saved as **DRAFT**. A cover can have only one open case.
@@ -33,7 +33,7 @@ DRAFT ──send──▶ SENT ──staff review──▶ CONFIRMED | REJECTED 
    - a unique `Message-ID`, which is stored on the case
 
    Sending is **blocked** when any of these is missing: the reason, the effective date, a field the reason needs, a document the reason needs, or the insurer's signed form when that insurer requires one. The database records are written first and the email is sent last, all in one transaction. If sending fails, everything rolls back, the case stays DRAFT and a `SEND_FAILED` event is logged.
-3. **Track.** A background worker (`manage.py poll_mailbox --loop`) reads new mail from `cancellation@imoth.co.ke` over IMAP every minute. It opens the mailbox **read-only**, so messages you haven't read in Zoho stay unread. The app tries to match each reply to a case, in this order:
+3. **Track.** A background worker (`manage.py run_worker`) reads new mail from `cancellation@imoth.co.ke` over IMAP every minute. It opens the mailbox **read-only**, so messages you haven't read in Zoho stay unread. The app tries to match each reply to a case, in this order:
    1. the plus address `cancellation+CXL000123@…` in To, Cc or Delivered-To
    2. the reference `IMOTH-CXL-000123` in the subject
    3. `In-Reply-To` or `References` pointing at a Message-ID we sent
@@ -41,6 +41,49 @@ DRAFT ──send──▶ SENT ──staff review──▶ CONFIRMED | REJECTED 
 
    The app never guesses. Anything unmatched or ambiguous goes to the **Unmatched inbox**, where you link it to a case by hand or dismiss it. Every email and attachment is stored on the case.
 4. **Confirm.** You review each reply and mark it Confirmed, Rejected, Query or Information only. **Nothing is ever confirmed automatically.**
+5. **On CONFIRMED,** the review form asks for the **effective date the insurer confirmed**. It defaults to the requested date and must fall inside the cover period. The app then:
+   - records the **pro-rata refund of unearned premium**, and shows the working in the audit log
+   - marks the **cover CANCELLED**
+   - stores the **cancellation certificate / credit note**, either by picking one of the reply's attachments or by uploading a file
+
+   The certificate can also be added later. A confirmed case **can't be closed until a certificate is stored**, and the dashboard lists the confirmed cases that still lack one.
+6. **SLA.** If a SENT case gets no insurer reply within the insurer's `sla_hours`, the staff member who created it gets a **reminder email**. The reminders are bundled into one email per person. If there's still no reply `SLA_STALE_AFTER_REMINDER_HOURS` later (default 24), the case is **flagged STALE**. STALE is a flag, not a status. Any reply linked to the case clears it. The count uses wall-clock hours.
+7. **Dashboard** (the home page) shows:
+   - counts of open, stale, unmatched and confirmed-this-month cases, plus the month's refund total
+   - work lists: replies to review, stale cases, missing certificates and drafts
+   - a search box for a policy number or an `IMOTH-CXL-…` reference; a single hit opens the case directly
+
+### Refund calculation
+
+```
+refund = premium × unearned_days / cover_days        (rounded half-up to 2 decimals)
+cover_days    = start_date … end_date, both days included
+unearned_days = confirmed effective date … end_date, both days included
+```
+
+The confirmed effective date is the **first day without cover**. For example, a cover from 1 Jan to 31 Dec 2026 with a premium of 36,500, cancelled effective 30 Jun 2026, has 185 of 365 days unearned, so the refund is **18,500.00**. A date on or before the start gives a full refund. The logic lives in `cancellations/services/refunds.py`. It's a plain pro-rata figure, with no short-period scale or insurer fees.
+
+### Confirmed cancellations for other systems
+
+- **CSV** for staff: Dashboard → *Download CSV*, or `GET /exports/confirmed-cancellations.csv?confirmed_since=2026-11-01&confirmed_until=2026-11-30`. Values starting with `=`, `+`, `-` or `@` are neutralised so they can't run as spreadsheet formulas.
+- **JSON API** for systems such as the commission system:
+
+  ```
+  GET /api/confirmed-cancellations/?confirmed_since=2026-11-01&limit=100&offset=0
+  Authorization: Bearer <one of EXPORT_API_TOKENS>
+  ```
+
+  ```json
+  {"count": 1, "limit": 100, "offset": 0, "next_offset": null, "results": [{
+    "reference": "IMOTH-CXL-000001", "case_id": 1, "status": "CONFIRMED",
+    "policy_number": "MTR-1001", "client_name": "Jane Wanjiru", "insurer": "…", "asset_reference": "KDA 123A",
+    "premium": "36500.00", "cover_start_date": "2026-01-01", "cover_end_date": "2026-12-31",
+    "requested_effective_date": "2026-06-30", "effective_date": "2026-06-30",
+    "refund_amount": "18500.00", "currency": "KES", "reason_code": "CLIENT_REQUEST",
+    "confirmed_at": "2026-11-23T10:15:00+03:00"}]}
+  ```
+
+  The API includes every case the insurer confirmed, whether it's still CONFIRMED or since CLOSED. Results are ordered by `confirmed_at`. For an incremental sync, store the last `confirmed_at` you received and pass it back as `confirmed_since`. `confirmed_since` and `confirmed_until` accept `YYYY-MM-DD` (whole day, Nairobi time) or a full ISO-8601 datetime. Amounts are strings, to avoid float rounding. Give each consuming system its own token, so you can revoke one without affecting the others.
 
 **Sender verification.** A matched reply is attached to its case only when both of these are true:
 
@@ -139,6 +182,10 @@ The test settings use SQLite, the in-memory mail backend and a fake IMAP server,
 - sender verification, including spoofed display names and forged auth headers
 - IMAP polling: only new UIDs are fetched, a UIDVALIDITY reset is handled, a failing message is retried then skipped, and fetches never mark mail as read
 - send-blocking validation
+- the refund calculation (mid-term, inception, last day, after expiry, leap year, rounding) and the confirm flow: cover cancelled, certificate from an attachment or an upload, close blocked without a certificate
+- SLA: no action before the deadline, one reminder, the STALE flag after the grace period, a reply clears it, a failed send is retried, the per-insurer SLA
+- the CSV export and the JSON API: auth, filters, pagination, formula neutralising
+- dashboard counts and search
 - idempotency, at both the IMAP and webhook level
 - status transitions (every disallowed pair is tested)
 - the append-only trigger
@@ -168,7 +215,7 @@ The app logs in to the mailbox **`cancellation@imoth.co.ke`**. It sends through 
    ```
 
    It shows the authentication headers Zoho stamped and whether each message would count as verified. Nothing in the mailbox changes. If Zoho's verdict is in `ARC-Authentication-Results` rather than `Authentication-Results`, set `INBOUND_AUTH_HEADER=ARC-Authentication-Results`. If the authserv-id isn't `mx.zohomail.com`, set `INBOUND_AUTHSERV_ID` to what it shows.
-6. **Run the worker.** In production it's the `mail-worker` component in `.do/app.yaml`, which runs `python manage.py poll_mailbox --loop`. Run **one** instance only. A second one would be harmless, but it would duplicate the work.
+6. **Run the worker.** In production it's the `worker` component in `.do/app.yaml`, which runs `python manage.py run_worker`. That one process polls the mailbox every `MAIL_POLL_INTERVAL` seconds and runs the SLA check every `SLA_CHECK_INTERVAL` seconds. Run **one** instance only. A second one would be harmless, but it would duplicate the work. For one-off runs there are `poll_mailbox` and `check_sla`.
 
 Mailbox habits: keep insurer replies in `INBOX` (`IMAP_FOLDER`) until they appear on the case. The worker reads only that folder, so a Zoho filter that moves replies into another folder would hide them from the app. Reading, flagging or archiving later is fine, because the app keeps its own copy of each email and attachment.
 
@@ -232,6 +279,12 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 | `INBOUND_AUTH_HEADER` | no | `Authentication-Results` | Header carrying the receiving server's SPF/DMARC verdict |
 | `INBOUND_AUTHSERV_ID` | no | `mx.zohomail.com` with Zoho | authserv-id that header must carry |
 | `INBOUND_REQUIRE_SENDER_AUTH` | no | `true` | Require an SPF/DMARC pass before attaching a reply |
+| `EXPORT_API_TOKENS` | for the API | – | Comma-separated Bearer tokens for `/api/confirmed-cancellations/` (one per consuming system) |
+| `CURRENCY` | no | `KES` | Currency code in exports |
+| `SLA_ALERT_EMAIL` | no | – | Reminder recipient when the case creator has no email |
+| `SLA_STALE_AFTER_REMINDER_HOURS` | no | `24` | Hours between the reminder and the STALE flag (0 = immediately) |
+| `SLA_CHECK_INTERVAL` | no | `300` | Seconds between SLA checks in the worker |
+| `APP_BASE_URL` | no | – | e.g. `https://cancellations.imoth.co.ke`; adds case links to reminder emails |
 | `INBOUND_WEBHOOK_SECRET` | Postmark/Mailgun | – | `user:password` Basic auth on the inbound webhook |
 | `POSTMARK_SERVER_TOKEN` | Postmark | – | Server API token |
 | `MAILGUN_API_KEY` / `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun | – | API and webhook signing keys |
@@ -255,10 +308,11 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 2. Create a **private** Spaces bucket and an access key pair.
 3. Edit `.do/app.yaml`: set the repo, the domain and your values. Then run `doctl apps create --spec .do/app.yaml`, or create the app in the UI with the same components:
    - a **web** service: build `python manage.py collectstatic --noinput`, run `gunicorn config.wsgi --bind 0.0.0.0:8080 --workers 2`
-   - a **mail-worker** worker: `python manage.py poll_mailbox --loop`, with exactly 1 instance
+   - a **worker**: `python manage.py run_worker` (mailbox polling + SLA checks), with exactly 1 instance
    - a **pre-deploy job**: `python manage.py migrate --noinput`
    - a Managed Postgres database
-4. Enter the secrets (`SECRET_KEY`, `MAILBOX_PASSWORD` and the Spaces keys) as encrypted env vars on both the web service and the worker.
+4. Enter the secrets (`SECRET_KEY`, `MAILBOX_PASSWORD`, `EXPORT_API_TOKENS` and the Spaces keys) as encrypted env vars on both the web service and the worker.
+   Give each staff user an email address (in the admin), or set `SLA_ALERT_EMAIL`, so SLA reminders have somewhere to go.
 5. After the first deploy, open the console and run `python manage.py createsuperuser`, then `python manage.py grant_cancellations_role <username>`.
 6. Run `python manage.py check_mailbox` in the console. It confirms the IMAP login and shows the auth headers. Then check that the Unmatched inbox page shows "Mailbox INBOX last checked … ago". The health check is at `/healthz`.
 
