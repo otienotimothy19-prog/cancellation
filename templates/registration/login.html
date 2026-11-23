@@ -1,14 +1,38 @@
 {% extends "base.html" %}
+{% load ui %}
 {% block title %}Log in · IMOTH Cancellations{% endblock %}
-{% block content %}
-<div class="card" style="max-width:380px;margin:40px auto">
-  <h1>Log in</h1>
-  <form method="post">{% csrf_token %}
-    {{ form.non_field_errors }}
-    <label for="id_username">Username</label>{{ form.username }}
-    <label for="id_password">Password</label>{{ form.password }}
-    <input type="hidden" name="next" value="{{ next }}">
-    <p><button class="btn">Log in</button></p>
-  </form>
+{% block shell %}
+<div class="auth">
+  <section class="auth__brand">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="brand-mark" aria-hidden="true">IM</div>
+      <div class="brand-text"><strong>IMOTH</strong><span>Cancellations</span></div>
+    </div>
+    <div>
+      <h2>Insurance cancellations, from request to refund.</h2>
+      <ul>
+        <li>{% icon "send" %} Send cancellation requests to insurers</li>
+        <li>{% icon "mail-open" %} Track and reconcile insurer replies</li>
+        <li>{% icon "banknote" %} Record confirmations and pro-rata refunds</li>
+      </ul>
+    </div>
+    <p class="small" style="color:#6f80a6;margin:0">Authorised IMOTH staff only.</p>
+  </section>
+  <section class="auth__form">
+    <div class="auth__card">
+      <h1>Sign in</h1>
+      <p class="muted" style="margin:6px 0 22px">Use your IMOTH Cancellations account.</p>
+      {% include "components/messages.html" %}
+      <form method="post" class="stack">{% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="alert alert--error">{% icon "x-circle" %}<div>{% for e in form.non_field_errors %}{{ e }}{% endfor %}</div></div>
+        {% endif %}
+        {% include "components/field.html" with field=form.username %}
+        {% include "components/field.html" with field=form.password %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <button class="btn btn-primary" style="width:100%;height:42px" data-busy-label="Signing in…">{% icon "shield-check" %}<span data-label>Sign in</span></button>
+      </form>
+    </div>
+  </section>
 </div>
 {% endblock %}

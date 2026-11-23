@@ -1,0 +1,15 @@
+{% load ui %}
+{# File upload with drag & drop, file name display and client-side type/size feedback. Server validation still applies. #}
+<div class="field{% if field.errors %} has-error{% endif %}" data-field="{{ field.name }}">
+  {% if label %}<span class="label">{{ label }}{% if required %}<span class="req" aria-hidden="true">*</span>{% endif %}</span>{% endif %}
+  <label class="dropzone" data-dropzone data-ext="{{ allowed_ext }}" data-max-mb="{{ max_upload_mb }}">
+    {% icon "upload" 24 %}
+    <strong>Drop a file here or click to browse</strong>
+    <span class="small">{{ allowed_ext|upper }} · up to {{ max_upload_mb }} MB</span>
+    <input type="file" name="{{ field.html_name }}" id="{{ field.id_for_label }}">
+  </label>
+  <div class="file-pill" data-file-pill hidden>{% icon "paperclip" 16 %}<span class="grow" data-file-name></span><span class="small muted" data-file-size></span>
+    <button type="button" class="btn btn-ghost btn-sm btn-icon" data-file-clear aria-label="Remove file">{% icon "x" 15 %}</button></div>
+  <div class="help" data-file-error style="color:var(--danger)" hidden></div>
+  {{ field.errors }}
+</div>

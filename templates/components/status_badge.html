@@ -1,0 +1,1 @@
+{% load ui %}<span class="badge badge--{{ case.status|status_tone }}">{{ case.get_status_display }}</span>{% if case.is_stale and case.status == "SENT" %} <span class="badge badge--stale">Stale</span>{% endif %}

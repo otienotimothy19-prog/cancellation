@@ -1,0 +1,22 @@
+{% load ui %}
+<aside class="sidebar" aria-label="Main navigation">
+  <div class="sidebar__brand">
+    <div class="brand-mark" aria-hidden="true">IM</div>
+    <div class="brand-text"><strong>IMOTH</strong><span>Cancellations</span></div>
+  </div>
+  <nav class="sidebar__nav">
+    <div class="nav-label">Workspace</div>
+    {% for item in nav_items %}
+      <a class="nav-item{% if item.active %} is-active{% endif %}" href="{% url item.url %}" data-nav-close
+         {% if item.active %}aria-current="page"{% endif %} title="{{ item.label }}">
+        {% icon item.icon 19 %}<span class="nav-text">{{ item.label }}</span>
+        {% if item.badge %}<span class="nav-badge" aria-label="{{ item.badge }} waiting">{{ item.badge }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+  <div class="sidebar__foot">
+    <button type="button" class="btn nav-item collapse-btn" data-sidebar-collapse aria-expanded="true" title="Collapse sidebar">
+      {% icon "panel-left" 19 %}<span class="collapse-text">Collapse</span>
+    </button>
+  </div>
+</aside>

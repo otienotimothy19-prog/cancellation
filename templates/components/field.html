@@ -1,0 +1,7 @@
+{# Form field: label (with required marker), widget, help and errors. Pass required=True for conditionally required fields. #}
+<div class="field{% if field.errors %} has-error{% endif %}{% if span %} {{ span }}{% endif %}" data-field="{{ field.name }}">
+  <label for="{{ field.id_for_label }}">{{ label|default:field.label }}{% if required or field.field.required %}<span class="req" aria-hidden="true">*</span>{% endif %}</label>
+  {{ field }}
+  {% if help or field.help_text %}<div class="help">{{ help|default:field.help_text }}</div>{% endif %}
+  {{ field.errors }}
+</div>

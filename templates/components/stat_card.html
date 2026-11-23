@@ -1,0 +1,9 @@
+{% load ui %}
+<a class="stat-card tone-{{ tone }}" href="{{ href }}">
+  <div class="stat-card__icon">{% icon icon 20 %}</div>
+  <div>
+    <div class="stat-card__value">{{ value }}</div>
+    <div class="stat-card__label">{{ label }}</div>
+    <div class="stat-card__hint">{{ hint }}</div>
+  </div>
+</a>
