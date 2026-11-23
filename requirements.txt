@@ -1,0 +1,7 @@
+Django>=5.2,<5.3
+psycopg[binary]>=3.2,<4
+dj-database-url>=3.0,<4
+django-anymail[postmark,mailgun]>=15,<16
+django-storages[s3]>=1.14,<2
+whitenoise>=6.9,<7
+gunicorn>=23
