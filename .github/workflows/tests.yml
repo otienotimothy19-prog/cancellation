@@ -1,0 +1,43 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: imoth
+          POSTGRES_PASSWORD: imoth
+          POSTGRES_DB: imoth_cancellations
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U imoth"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://imoth:imoth@localhost:5432/imoth_cancellations
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Migrations are up to date
+        run: python manage.py makemigrations --check --dry-run --settings=config.settings_test
+      - name: Migrate (includes the append-only trigger on Postgres)
+        run: python manage.py migrate --noinput --settings=config.settings_test
+      - name: Tests on PostgreSQL
+        run: python manage.py test cancellations --settings=config.settings_test -v 2
+      - name: Deploy checks
+        env:
+          SECRET_KEY: ci-only-not-a-real-secret-0123456789abcdefghijklmnopqrstuvwxyz
+          ALLOWED_HOSTS: example.com
+          SECURE_HSTS_SECONDS: "31536000"
+        run: python manage.py check --deploy --fail-level ERROR
