@@ -1,146 +1,266 @@
 {% extends "base.html" %}
+{% load ui %}
+{% block title %}{% if creating %}New cancellation{% else %}Edit {{ case.reference }}{% endif %} · IMOTH Cancellations{% endblock %}
+{% block header_title %}{% if creating %}New Cancellation{% else %}Edit draft {{ case.reference }}{% endif %}{% endblock %}
+{% block page_description %}{% if creating %}Create a cancellation request and send it to the insurer{% else %}{{ case.cover.client_name }} · {{ case.cover.policy_number }}{% endif %}{% endblock %}
 {% block content %}
-<h1>{% if creating %}New cancellation{% else %}Edit draft {{ case.reference }}{% endif %}</h1>
-<form method="post" enctype="multipart/form-data">{% csrf_token %}
-  {% if cover_form %}
-  <div class="card">
-    <h2>1. Cover</h2>
-    {{ cover_form.non_field_errors }}
-    {% include "cancellations/_field.html" with field=cover_form.existing_cover %}
-    <div id="new-cover">
-      <p class="muted">…or enter a new cover:</p>
-      <div class="row">
-        <div>{% include "cancellations/_field.html" with field=cover_form.client_name %}</div>
-        <div>{% include "cancellations/_field.html" with field=cover_form.policy_number %}</div>
-        <div>{% include "cancellations/_field.html" with field=cover_form.insurer %}</div>
-      </div>
-      <div class="row">
-        <div>{% include "cancellations/_field.html" with field=cover_form.asset_reference %}</div>
-        <div>{% include "cancellations/_field.html" with field=cover_form.premium %}</div>
-        <div>{% include "cancellations/_field.html" with field=cover_form.start_date %}</div>
-        <div>{% include "cancellations/_field.html" with field=cover_form.end_date %}</div>
-      </div>
-    </div>
-  </div>
-  {% else %}
-  <div class="card"><h2>Cover</h2>{{ case.cover }}</div>
+<form method="post" enctype="multipart/form-data" id="case-form" novalidate>{% csrf_token %}
+  <p class="help" style="margin:0 0 14px"><span class="req">*</span> Required to send. You can save an incomplete request as a draft.</p>
+
+  {% if cover_form.non_field_errors or case_form.non_field_errors or doc_form.non_field_errors %}
+    <ul class="errorlist nonfield">{% for e in cover_form.non_field_errors %}<li>{{ e }}</li>{% endfor %}{% for e in case_form.non_field_errors %}<li>{{ e }}</li>{% endfor %}{% for e in doc_form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>
   {% endif %}
 
-  <div class="card">
-    <h2>{% if creating %}2. {% endif %}Reason and effective date</h2>
-    {{ case_form.non_field_errors }}
-    <div class="row">
-      <div>{% include "cancellations/_field.html" with field=case_form.reason_code %}</div>
-      <div>{% include "cancellations/_field.html" with field=case_form.effective_date %}</div>
+  {% if cover_form %}
+  <section class="form-section" aria-labelledby="sec-a">
+    <div class="form-section__head"><span class="step">A</span>
+      <div><h2 id="sec-a">Policy information</h2><p>Choose a cover already on file, or enter the policy being cancelled.</p></div>
     </div>
-    <div id="reason-needs" class="warnbox" style="display:none"></div>
-    <div class="row">
-      <div>{% include "cancellations/_field.html" with field=case_form.outstanding_amount %}</div>
-      <div>{% include "cancellations/_field.html" with field=case_form.notice_date %}</div>
-      <div>{% include "cancellations/_field.html" with field=case_form.new_policy_number %}</div>
-      <div>{% include "cancellations/_field.html" with field=case_form.original_cover_reference %}</div>
+    <div class="form-section__body">
+      {% include "components/field.html" with field=cover_form.existing_cover label="Use an existing cover" help="Only active covers are listed." %}
+      <div id="new-cover">
+        <div class="or-divider">or enter a new cover</div>
+        <div class="form-grid form-grid--3">
+          {% include "components/field.html" with field=cover_form.policy_number required=True %}
+          {% include "components/field.html" with field=cover_form.insurer required=True %}
+          {% include "components/field.html" with field=cover_form.asset_reference %}
+          {% include "components/field.html" with field=cover_form.premium required=True help="Annual premium, used for the pro-rata refund." %}
+          {% include "components/field.html" with field=cover_form.start_date label="Cover start date" required=True %}
+          {% include "components/field.html" with field=cover_form.end_date label="Cover end date" required=True %}
+        </div>
+      </div>
     </div>
-    {% include "cancellations/_field.html" with field=case_form.reason_note %}
-  </div>
+  </section>
+
+  <section class="form-section" aria-labelledby="sec-b">
+    <div class="form-section__head"><span class="step">B</span>
+      <div><h2 id="sec-b">Client information</h2><p>The policyholder named on the cover.</p></div>
+    </div>
+    <div class="form-section__body">
+      <div id="client-new">{% include "components/field.html" with field=cover_form.client_name required=True %}</div>
+      <p id="client-existing" class="muted" style="margin:0" hidden>{% icon "info" 16 %} Client details come from the selected cover.</p>
+    </div>
+  </section>
+  {% else %}
+  <section class="form-section">
+    <div class="form-section__head"><span class="step">{% icon "folder" 16 %}</span>
+      <div><h2>Cover</h2><p>{{ case.cover }}</p></div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="form-section" aria-labelledby="sec-c">
+    <div class="form-section__head"><span class="step">{% if creating %}C{% else %}{% icon "file-text" 16 %}{% endif %}</span>
+      <div><h2 id="sec-c">Cancellation details</h2><p>Why the cover is being cancelled and from when.</p></div>
+    </div>
+    <div class="form-section__body">
+      <div class="form-grid">
+        {% include "components/field.html" with field=case_form.reason_code label="Cancellation reason" required=True %}
+        {% include "components/field.html" with field=case_form.effective_date label="Effective date" required=True help="First day without cover. Must fall within the cover period." %}
+      </div>
+      <div id="reason-needs" class="requirement" hidden>{% icon "info" 18 %}<span></span></div>
+      <div class="form-grid" style="margin-top:16px" id="reason-extra">
+        {% include "components/field.html" with field=case_form.outstanding_amount required=True %}
+        {% include "components/field.html" with field=case_form.notice_date required=True %}
+        {% include "components/field.html" with field=case_form.new_policy_number required=True %}
+        {% include "components/field.html" with field=case_form.original_cover_reference required=True %}
+      </div>
+      <div style="margin-top:16px">{% include "components/field.html" with field=case_form.reason_note %}</div>
+    </div>
+  </section>
 
   {% if doc_form %}
-  <div class="card">
-    <h2>3. Supporting document</h2>
-    <p class="muted">Attach the document the reason requires (you can add more on the case page). PDF, PNG, JPG, TIFF, DOC/DOCX, XLSX.</p>
-    {{ doc_form.non_field_errors }}
-    <div class="row">
-      <div>{% include "cancellations/_field.html" with field=doc_form.doc_type %}</div>
-      <div>{% include "cancellations/_field.html" with field=doc_form.source %}</div>
-      <div>{% include "cancellations/_field.html" with field=doc_form.file %}</div>
+  <section class="form-section" aria-labelledby="sec-d">
+    <div class="form-section__head"><span class="step">D</span>
+      <div><h2 id="sec-d">Supporting documents</h2><p>Attach the document the reason requires. You can add more on the case page later.</p></div>
     </div>
-  </div>
+    <div class="form-section__body">
+      <div class="form-grid">
+        {% include "components/field.html" with field=doc_form.doc_type label="Document type" %}
+        {% include "components/field.html" with field=doc_form.source label="Provided by" %}
+        <div class="span-all">{% include "components/dropzone.html" with field=doc_form.file %}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section" aria-labelledby="sec-e">
+    <div class="form-section__head"><span class="step">E</span>
+      <div><h2 id="sec-e">Review &amp; submit</h2><p>Check the essentials. “Save &amp; send” shows the exact email before anything goes out.</p></div>
+    </div>
+    <div class="form-section__body">
+      <dl class="summary" id="summary">
+        <div><dt>Client</dt><dd data-sum="client"></dd></div>
+        <div><dt>Policy</dt><dd data-sum="policy"></dd></div>
+        <div><dt>Insurer</dt><dd data-sum="insurer"></dd></div>
+        <div><dt>Reason</dt><dd data-sum="reason"></dd></div>
+        <div><dt>Effective date</dt><dd data-sum="effective"></dd></div>
+        <div><dt>Document</dt><dd data-sum="document"></dd></div>
+      </dl>
+      <ul class="checklist" id="checklist" aria-live="polite"></ul>
+    </div>
+  </section>
   {% endif %}
 
-  {% if creating %}
-    <button class="btn" name="action" value="send" id="save-send">Save &amp; send…</button>
-    <button class="btn secondary" name="action" value="draft">Save draft</button>
-  {% else %}
-    <button class="btn">Save draft</button>
-  {% endif %}
-  {% if case %}<a class="btn secondary" href="{{ case.get_absolute_url }}">Cancel</a>{% endif %}
+  <div class="form-actions">
+    <span class="grow">{% if creating %}Nothing is sent until you confirm the preview.{% else %}Changes are logged on the case.{% endif %}</span>
+    {% if case %}<a class="btn btn-ghost" href="{{ case.get_absolute_url }}">Cancel</a>{% endif %}
+    {% if creating %}
+      <button class="btn btn-secondary" name="action" value="draft" data-busy-label="Saving…">{% icon "save" 16 %}<span data-label>Save draft</span></button>
+      <button class="btn btn-primary" name="action" value="send" id="save-send">{% icon "send" 16 %}<span data-label>Save &amp; send…</span></button>
+    {% else %}
+      <button class="btn btn-primary" data-busy-label="Saving…">{% icon "save" 16 %}<span data-label>Save draft</span></button>
+    {% endif %}
+  </div>
 </form>
 
 {% if creating %}
-<dialog id="send-preview" style="max-width:760px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:8px;padding:18px">
-  <h2 style="margin-top:0">Check before sending</h2>
-  <div id="pv-problems" class="badbox" hidden></div>
-  <div id="pv-email" hidden>
-    <dl class="kv"><dt>To</dt><dd id="pv-to"></dd><dt>Cc</dt><dd id="pv-cc"></dd><dt>Subject</dt><dd id="pv-subject"></dd></dl>
-    <pre class="mail" id="pv-body"></pre>
+<dialog class="modal modal--wide" id="send-preview" aria-labelledby="pv-title">
+  <div class="modal__head">
+    <div class="modal__icon">{% icon "send" 20 %}</div>
+    <h2 id="pv-title">Check before sending</h2>
+    <button type="button" class="btn btn-ghost btn-icon" id="pv-x" aria-label="Close">{% icon "x" %}</button>
   </div>
-  <p class="row" style="justify-content:flex-end">
-    <button type="button" class="btn secondary" id="pv-back" style="flex:0">Back to edit</button>
-    <button type="button" class="btn secondary" id="pv-draft" style="flex:0" hidden>Save as draft</button>
-    <button type="button" class="btn" id="pv-send" style="flex:0" hidden>Send now</button>
-  </p>
+  <div class="modal__body">
+    <div id="pv-loading" class="loading" hidden>{% icon "loader" 20 %} Preparing preview…</div>
+    <div id="pv-problems" class="alert alert--error" style="margin-bottom:14px" hidden></div>
+    <div id="pv-email" hidden>
+      <dl class="kv kv--compact"><dt>To</dt><dd id="pv-to"></dd><dt>Cc</dt><dd id="pv-cc"></dd><dt>Subject</dt><dd id="pv-subject"></dd></dl>
+      <pre class="mail" id="pv-body"></pre>
+    </div>
+  </div>
+  <div class="modal__foot">
+    <button type="button" class="btn btn-secondary" id="pv-back">Back to edit</button>
+    <button type="button" class="btn btn-secondary" id="pv-draft" hidden>{% icon "save" 16 %}Save as draft</button>
+    <button type="button" class="btn btn-primary" id="pv-send" hidden>{% icon "send" 16 %}<span data-label>Send now</span></button>
+  </div>
 </dialog>
 {% url 'cancellations:case_preview' as preview_url %}
 {{ preview_url|json_script:"preview-url" }}
 {% endif %}
 {{ reason_meta|json_script:"reason-meta" }}
 {% endblock %}
+
 {% block scripts %}
 <script>
 (function () {
-  const meta = JSON.parse(document.getElementById("reason-meta").textContent);
-  const reason = document.querySelector("[name='case-reason_code']");
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const q = name => document.querySelector(`[name='${name}']`);
+  const meta = JSON.parse($("reason-meta").textContent);
+  const reason = q("case-reason_code");
   const extra = ["outstanding_amount", "notice_date", "new_policy_number", "original_cover_reference"];
-  function update() {
+  const existing = q("cover-existing_cover");
+
+  function selectedText(sel) { return sel && sel.value ? sel.options[sel.selectedIndex].text : ""; }
+
+  function updateReason() {
     const m = meta[reason.value] || {fields: [], documents: []};
     extra.forEach(f => {
       const el = document.querySelector(`[data-field='${f}']`);
-      if (el) el.parentElement.style.display = m.fields.includes(f) || el.querySelector(".errorlist") ? "" : "none";
+      if (el) el.hidden = !(m.fields.includes(f) || el.querySelector(".errorlist"));
     });
-    const box = document.getElementById("reason-needs");
+    const box = $("reason-needs");
     const needs = [...m.fields.map(f => f.replaceAll("_", " ")), ...m.documents];
-    box.style.display = needs.length ? "" : "none";
-    box.textContent = needs.length ? "This reason requires: " + needs.join(", ") + "." : "";
+    box.hidden = !needs.length;
+    box.querySelector("span").textContent = needs.length ? "This reason requires: " + needs.join(", ") + "." : "";
   }
-  reason.addEventListener("change", update); update();
-  const existing = document.querySelector("[name='cover-existing_cover']");
-  if (existing) {
-    const toggle = () => document.getElementById("new-cover").style.display = existing.value ? "none" : "";
-    existing.addEventListener("change", toggle); toggle();
-  }
+  reason.addEventListener("change", updateReason);
+  updateReason();
 
-  // "Save & send": show the exact email (or what is missing) before anything is saved or sent.
-  const sendBtn = document.getElementById("save-send");
-  const dlg = document.getElementById("send-preview");
-  if (!sendBtn || !dlg || typeof dlg.showModal !== "function") return;  // no JS dialog: plain submit still validates
+  function updateCover() {
+    if (!existing) return;
+    const using = !!existing.value;
+    $("new-cover").hidden = using;
+    $("client-new").hidden = using;
+    $("client-existing").hidden = !using;
+  }
+  if (existing) { existing.addEventListener("change", updateCover); updateCover(); }
+
+  /* ---- Live review summary (section E) ---- */
+  const summary = $("summary");
+  function setSum(key, value) {
+    const dd = summary.querySelector(`[data-sum='${key}']`);
+    dd.textContent = value || "Not provided";
+    dd.classList.toggle("is-empty", !value);
+  }
+  function fmtDate(v) {
+    if (!v) return "";
+    const d = new Date(v + "T00:00:00");
+    return isNaN(d) ? v : d.toLocaleDateString(undefined, {day: "2-digit", month: "short", year: "numeric"});
+  }
+  function updateSummary() {
+    if (!summary) return;
+    if (existing && existing.value) {
+      const t = selectedText(existing);
+      setSum("client", t.split(" – ").slice(1).join(" – ").replace(/\s*\([^)]*\)\s*$/, ""));
+      setSum("policy", t.split(" – ")[0]);
+      setSum("insurer", (t.match(/\(([^)]*)\)\s*$/) || [])[1]);
+    } else {
+      setSum("client", q("cover-client_name").value.trim());
+      setSum("policy", q("cover-policy_number").value.trim());
+      setSum("insurer", selectedText(q("cover-insurer")));
+    }
+    setSum("reason", selectedText(reason));
+    setSum("effective", fmtDate(q("case-effective_date").value));
+    const file = q("doc-file").files[0];
+    setSum("document", file ? `${file.name} (${selectedText(q("doc-doc_type")) || "type not chosen"})` : "");
+
+    // Checklist of what sending needs (the server re-checks everything).
+    const m = meta[reason.value] || {fields: [], documents: []};
+    const items = [
+      ["Cover selected or entered", existing && existing.value ? true : ["cover-client_name", "cover-policy_number", "cover-premium", "cover-start_date", "cover-end_date"].every(n => q(n).value.trim()) && !!q("cover-insurer").value],
+      ["Cancellation reason", !!reason.value],
+      ["Effective date", !!q("case-effective_date").value],
+      ...m.fields.map(f => [f.replaceAll("_", " ").replace(/^./, c => c.toUpperCase()), !!q("case-" + f).value.trim()]),
+      ...m.documents.map(d => [d + " attached", !!file]),
+    ];
+    const list = $("checklist");
+    list.replaceChildren(...items.map(([label, ok]) => {
+      const li = document.createElement("li");
+      li.innerHTML = ok ? '<span class="ok">✓</span>' : '<span class="todo">•</span>';
+      li.append(" " + label + (ok ? "" : " — missing"));
+      return li;
+    }));
+  }
+  document.getElementById("case-form").addEventListener("input", updateSummary);
+  document.getElementById("case-form").addEventListener("change", updateSummary);
+  updateSummary();
+
+  /* ---- "Save & send": exact preview before anything is saved or sent ---- */
+  const sendBtn = $("save-send");
+  const dlg = $("send-preview");
+  if (!sendBtn || !dlg || typeof dlg.showModal !== "function") return;  // without JS: plain submit, still validated
   const form = sendBtn.form;
-  const $ = id => document.getElementById(id);
-  const submitWith = action => {
-    const input = Object.assign(document.createElement("input"), {type: "hidden", name: "action", value: action});
-    form.appendChild(input);
-    form.submit();
-  };
-  sendBtn.addEventListener("click", async e => {
+  function submitWith(action) {
+    form.appendChild(Object.assign(document.createElement("input"), {type: "hidden", name: "action", value: action}));
+    form.querySelectorAll("button").forEach(b => b.disabled = true);
+    HTMLFormElement.prototype.submit.call(form);
+  }
+  sendBtn.addEventListener("click", async function (e) {
     e.preventDefault();
     const data = new FormData(form);
     const file = data.get("doc-file");
-    data.delete("doc-file");  // the preview does not need the file itself
+    data.delete("doc-file");
     data.set("doc-has_file", file && file.size ? "1" : "0");
-    sendBtn.disabled = true;
+    $("pv-problems").hidden = true; $("pv-email").hidden = true; $("pv-send").hidden = true; $("pv-draft").hidden = true;
+    $("pv-loading").hidden = false;
+    dlg.showModal();
     let res;
     try {
       const r = await fetch(JSON.parse($("preview-url").textContent), {method: "POST", body: data, credentials: "same-origin"});
       res = await r.json();
     } catch (err) {
-      res = {ok: false, problems: ["Could not load the preview: " + err]};
-    } finally {
-      sendBtn.disabled = false;
+      res = {ok: false, problems: ["Could not load the preview. Check your connection and try again."]};
     }
-    $("pv-problems").hidden = res.ok;
+    $("pv-loading").hidden = true;
     $("pv-problems").replaceChildren();
+    $("pv-problems").hidden = res.ok;
     if (!res.ok) {
       const ul = document.createElement("ul");
       (res.problems || []).forEach(p => ul.appendChild(Object.assign(document.createElement("li"), {textContent: p})));
-      $("pv-problems").append(Object.assign(document.createElement("strong"), {textContent: "Cannot send yet:"}), ul);
+      const wrap = document.createElement("div");
+      wrap.append(Object.assign(document.createElement("strong"), {textContent: "Cannot send yet"}), ul);
+      $("pv-problems").append(wrap);
     }
     $("pv-email").hidden = !res.body;
     if (res.body) {
@@ -151,10 +271,14 @@
     }
     $("pv-send").hidden = !res.ok;
     $("pv-draft").hidden = res.ok || !!res.form_errors;  // blocked but valid: offer to keep it as a draft
-    dlg.showModal();
+    ($("pv-send").hidden ? $("pv-back") : $("pv-send")).focus();
   });
   $("pv-back").addEventListener("click", () => dlg.close());
-  $("pv-send").addEventListener("click", () => { $("pv-send").disabled = true; submitWith("send"); });
+  $("pv-x").addEventListener("click", () => dlg.close());
+  $("pv-send").addEventListener("click", function () {
+    this.disabled = true; this.classList.add("is-busy"); this.querySelector("[data-label]").textContent = "Sending…";
+    submitWith("send");
+  });
   $("pv-draft").addEventListener("click", () => submitWith("draft"));
 })();
 </script>

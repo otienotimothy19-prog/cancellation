@@ -1,36 +1,72 @@
 {% extends "base.html" %}
+{% load ui %}
+{% block title %}Cases · IMOTH Cancellations{% endblock %}
+{% block header_title %}Cases{% endblock %}
+{% block page_description %}Every cancellation request, from draft to closed{% endblock %}
 {% block content %}
-<div class="row" style="align-items:center;margin-bottom:12px">
-  <h1 style="margin:0">Cancellation cases</h1>
-  <div style="text-align:right">
-    {% if to_review %}<a class="badge s-QUERY" href="{% url 'cancellations:dashboard' %}">{{ to_review }} repl{{ to_review|pluralize:"y,ies" }} to review</a>{% endif %}
-    {% if unmatched_count %}<a class="badge s-REJECTED" href="{% url 'cancellations:unmatched_list' %}">{{ unmatched_count }} unmatched</a>{% endif %}
-    <a class="btn" href="{% url 'cancellations:case_create' %}">New cancellation</a>
+<div class="page-header">
+  <div class="page-header__title">
+    <h2>Cancellation cases</h2>
+    <p>{{ page_obj.paginator.count }} case{{ page_obj.paginator.count|pluralize }}{% if filtered %} matching your filters{% endif %}</p>
+  </div>
+  <div class="btn-row">
+    {% if to_review %}<a class="badge badge--warning" href="{% url 'cancellations:dashboard' %}">{{ to_review }} repl{{ to_review|pluralize:"y,ies" }} to review</a>{% endif %}
+    {% if unmatched_count %}<a class="badge badge--danger" href="{% url 'cancellations:unmatched_list' %}">{{ unmatched_count }} unmatched email{{ unmatched_count|pluralize }}</a>{% endif %}
+    <a class="btn btn-primary" href="{% url 'cancellations:case_create' %}">{% icon "plus" %}New cancellation</a>
   </div>
 </div>
-<form class="card row" method="get">
-  <div><label for="id_q">Policy number, reference or client</label>{{ form.q }}</div>
-  <div style="max-width:220px"><label for="id_status">Status</label>{{ form.status }}</div>
-  <div style="max-width:220px"><label for="id_view">Show</label>{{ form.view }}</div>
-  <div style="flex:0"><button class="btn">Search</button></div>
-</form>
-<div class="card">
-<table>
-  <thead><tr><th>Reference</th><th>Client</th><th>Policy</th><th>Insurer</th><th>Reason</th><th>Effective</th><th>Refund</th><th>Status</th><th>Created</th></tr></thead>
-  <tbody>
-  {% for c in cases %}
-    <tr>
-      <td><a href="{{ c.get_absolute_url }}">{{ c.reference }}</a></td>
-      <td>{{ c.cover.client_name }}</td><td>{{ c.cover.policy_number }}</td><td>{{ c.cover.insurer }}</td>
-      <td>{{ c.reason_label|default:"—" }}</td><td>{{ c.confirmed_effective_date|default:c.effective_date|date:"d M Y"|default:"—" }}</td>
-      <td>{{ c.refund_amount|default:"—" }}</td>
-      <td><span class="badge s-{{ c.status }}">{{ c.get_status_display }}</span>{% if c.is_stale %} <span class="badge stale">Stale</span>{% endif %}</td>
-      <td class="muted">{{ c.created_at|date:"d M Y" }}</td>
-    </tr>
-  {% empty %}
-    <tr><td colspan="9" class="muted">No cases found.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
+
+<section class="card">
+  <form method="get" class="filter-bar" role="search">
+    <div class="field">
+      <label for="id_q">Search</label>
+      <div class="input-icon">{% icon "search" %}<input type="search" name="q" id="id_q" value="{{ form.q.value|default:'' }}" placeholder="Policy number, reference or client"></div>
+    </div>
+    <div class="field"><label for="id_status">Status</label>{{ form.status }}</div>
+    <div class="field"><label for="id_view">Show</label>{{ form.view }}</div>
+    <div class="btn-row">
+      <button class="btn btn-primary">{% icon "filter" 16 %}Apply</button>
+      {% if filtered %}<a class="btn btn-ghost" href="{% url 'cancellations:case_list' %}">Reset</a>{% endif %}
+    </div>
+  </form>
+
+  {% if cases %}
+  <div class="table-wrap" style="border-top:1px solid var(--border)">
+    <table class="table table--stack">
+      <thead>
+        <tr><th>Reference</th><th>Client</th><th>Policy</th><th>Insurer</th><th>Cancellation date</th><th>Status</th><th>Last updated</th><th><span class="sr-only">Actions</span></th></tr>
+      </thead>
+      <tbody>
+      {% for c in cases %}
+        <tr data-href="{{ c.get_absolute_url }}">
+          <td data-label="Reference"><a class="ref" href="{{ c.get_absolute_url }}">{{ c.reference }}</a></td>
+          <td data-label="Client"><div><div class="cell-main">{{ c.cover.client_name }}</div><div class="cell-sub">{{ c.reason_label|default:"No reason yet" }}</div></div></td>
+          <td data-label="Policy" class="nowrap">{{ c.cover.policy_number }}</td>
+          <td data-label="Insurer">{{ c.cover.insurer }}</td>
+          <td data-label="Cancellation date" class="nowrap"><span>
+            {% if c.confirmed_effective_date %}{{ c.confirmed_effective_date|date:"d M Y" }} <span class="cell-sub">confirmed</span>
+            {% elif c.effective_date %}{{ c.effective_date|date:"d M Y" }} <span class="cell-sub">requested</span>
+            {% else %}<span class="muted">—</span>{% endif %}
+          </span></td>
+          <td data-label="Status" class="nowrap"><span>{% include "components/status_badge.html" with case=c %}</span></td>
+          <td data-label="Last updated" class="nowrap muted" title="{{ c.updated_at|date:'d M Y H:i' }}">{{ c.updated_at|ago }}</td>
+          <td data-label="" class="right"><a class="btn btn-secondary btn-sm" href="{{ c.get_absolute_url }}">Open{% icon "chevron-right" 15 %}</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "components/pagination.html" %}
+  {% else %}
+    <div style="border-top:1px solid var(--border)">
+    {% if filtered %}
+      {% url 'cancellations:case_list' as reset_url %}
+      {% include "components/empty_state.html" with icon="search" title="No cases match" text="Try a different policy number, reference or filter." action_url=reset_url action_label="Clear filters" %}
+    {% else %}
+      {% url 'cancellations:case_create' as new_url %}
+      {% include "components/empty_state.html" with icon="folder" title="No cases yet" text="Start by creating your first cancellation request." action_url=new_url action_label="New cancellation" %}
+    {% endif %}
+    </div>
+  {% endif %}
+</section>
 {% endblock %}

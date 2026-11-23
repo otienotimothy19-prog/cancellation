@@ -3,6 +3,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import FileResponse, Http404, JsonResponse
@@ -15,7 +16,7 @@ from .forms import CaseForm, CoverChoiceForm, DocumentForm, FollowUpForm, LinkEm
 from .models import CancellationCase, CaseDocument, CaseEmail, MailboxState
 from .permissions import cancellations_role_required
 from .reasons import REASONS, DocType, doc_label
-from .services.documents import save_uploaded_document
+from .services.documents import ALLOWED_TYPES, save_uploaded_document
 from .services.inbound import dismiss_email, link_email
 from .services.refunds import pro_rata_refund
 from .services.sending import (
@@ -24,6 +25,11 @@ from .services.sending import (
 from .services.workflow import S, TransitionError, close_case, close_if_complete, log_event, review_inbound_email
 
 BLOCKING_STATUSES = (S.DRAFT, S.SENT, S.QUERY, S.CONFIRMED)
+
+
+def _upload_limits():
+    """Allowed file types and size, shown on upload controls (the server validates regardless)."""
+    return {"allowed_ext": ", ".join(sorted(ALLOWED_TYPES)), "max_upload_mb": settings.MAX_UPLOAD_MB}
 
 
 def _reason_meta():
@@ -79,6 +85,7 @@ def dashboard(request):
     cases = CancellationCase.objects.select_related("cover__insurer")
     month_start = _month_start()
     confirmed_month = cases.filter(confirmed_at__gte=month_start)
+    missing_certificates = cases.filter(status=S.CONFIRMED).exclude(documents__type=DocType.CERTIFICATE)
     return render(request, "cancellations/dashboard.html", {
         "counts": {
             "open": cases.filter(status__in=OPEN_STATUSES).count(),
@@ -89,10 +96,13 @@ def dashboard(request):
         "month_label": month_start.strftime("%B %Y"),
         "refunds_month": confirmed_month.aggregate(total=Sum("refund_amount"))["total"],
         "currency": settings.CURRENCY,
-        "to_review": _to_review_qs().select_related("case__cover")[:20],
-        "stale_cases": cases.filter(is_stale=True, status=S.SENT).order_by("sent_at")[:20],
-        "missing_certificates": cases.filter(status=S.CONFIRMED).exclude(documents__type=DocType.CERTIFICATE)[:20],
-        "drafts": cases.filter(status=S.DRAFT).order_by("-created_at")[:10],
+        "to_review": _to_review_qs().select_related("case__cover")[:8],
+        "to_review_count": _to_review_qs().count(),
+        "stale_cases": cases.filter(is_stale=True, status=S.SENT).order_by("sent_at")[:8],
+        "missing_certificates": missing_certificates[:8],
+        "missing_certificates_count": missing_certificates.count(),
+        "drafts": cases.filter(status=S.DRAFT).order_by("-created_at")[:8],
+        "drafts_count": cases.filter(status=S.DRAFT).count(),
         "recent_confirmed": confirmed_month.order_by("-confirmed_at")[:10],
     })
 
@@ -112,9 +122,16 @@ def case_list(request):
             cases = cases.filter(is_stale=True, status=S.SENT)
         elif view == "confirmed_month":
             cases = cases.filter(confirmed_at__gte=_month_start()).order_by("-confirmed_at")
+    if not cases.query.order_by:
+        cases = cases.order_by("-updated_at", "-pk")  # most recently active first
+    page_obj = Paginator(cases, 25).get_page(request.GET.get("page"))
+    params = request.GET.copy()
+    params.pop("page", None)
     return render(request, "cancellations/case_list.html", {
-        "form": form, "cases": cases[:200], "unmatched_count": _unmatched_qs().count(),
-        "to_review": _to_review_qs().count(),
+        "form": form, "page_obj": page_obj, "cases": page_obj.object_list,
+        "query_string": f"{params.urlencode()}&" if params else "",
+        "filtered": any(request.GET.get(k) for k in ("q", "status", "view")),
+        "unmatched_count": _unmatched_qs().count(), "to_review": _to_review_qs().count(),
     })
 
 
@@ -174,7 +191,7 @@ def case_create(request):
             messages.success(request, f"{case.reference} sent to {cover.insurer.cancellation_email}.")
         return redirect(case)
     return render(request, "cancellations/case_form.html", {
-        **forms_, "reason_meta": _reason_meta(), "creating": True,
+        **forms_, "reason_meta": _reason_meta(), "creating": True, **_upload_limits(),
     })
 
 
@@ -232,7 +249,7 @@ def case_edit(request, pk):
         messages.success(request, "Draft updated.")
         return redirect(case)
     return render(request, "cancellations/case_form.html", {
-        "case": case, "case_form": form, "reason_meta": _reason_meta(), "creating": False,
+        "case": case, "case_form": form, "reason_meta": _reason_meta(), "creating": False, **_upload_limits(),
     })
 
 
@@ -253,12 +270,36 @@ def case_detail(request, pk):
         "preview_subject": preview_subject,
         "preview_body": preview_body,
         "can_close": case.status in (S.CONFIRMED, S.REJECTED, S.QUERY),
+        "progress": _progress(case),
+        **_upload_limits(),
         "follow_up_form": _follow_up_form(case) if case.status == S.QUERY else None,
         "requested_refund": (
             pro_rata_refund(case.cover.premium, case.cover.start_date, case.cover.end_date, case.effective_date)
             if case.effective_date else None
         ),
     })
+
+
+def _progress(case):
+    """Read-only progress tracker derived from the case status (no extra state)."""
+    order = {S.DRAFT: 0, S.SENT: 1, S.QUERY: 2, S.CONFIRMED: 3, S.REJECTED: 3, S.CLOSED: 4}
+    current = order[case.status]
+    labels = ["Draft", "Sent to insurer", "Insurer replied", "Confirmed", "Closed"]
+    not_confirmed = case.status == S.REJECTED or (case.status == S.CLOSED and not case.confirmed_at)
+    if not_confirmed:
+        labels[3] = "Rejected" if case.status == S.REJECTED else "Not confirmed"
+    steps = []
+    for i, label in enumerate(labels):
+        if i == 3 and not_confirmed:
+            state = "bad"
+        elif i < current or case.status == S.CLOSED or (case.status == S.CONFIRMED and i == current):
+            state = "done"
+        elif i == current:
+            state = "current"
+        else:
+            state = "todo"
+        steps.append({"label": label, "state": state})
+    return steps
 
 
 def _follow_up_form(case):
@@ -398,13 +439,20 @@ def case_close(request, pk):
     return redirect(case)
 
 
+def _unmatched_inbox(request, email=None, form=None):
+    """Two-panel inbox: the unmatched list, plus the selected email and its link form."""
+    emails = (_unmatched_qs().select_related("suggested_case")
+              .prefetch_related("documents").order_by("-received_at"))
+    return render(request, "cancellations/unmatched_inbox.html", {
+        "emails": emails, "email": email, "form": form,
+        "documents": email.documents.all() if email else [],
+        "mailboxes": MailboxState.objects.order_by("folder"),
+    })
+
+
 @cancellations_role_required
 def unmatched_list(request):
-    emails = CaseEmail.objects.filter(direction=CaseEmail.Direction.INBOUND, case__isnull=True).exclude(
-        classification=CaseEmail.Classification.DISMISSED).select_related("suggested_case")
-    return render(request, "cancellations/unmatched_list.html", {
-        "emails": emails, "mailboxes": MailboxState.objects.order_by("folder"),
-    })
+    return _unmatched_inbox(request)
 
 
 @cancellations_role_required
@@ -425,6 +473,4 @@ def unmatched_detail(request, email_id):
             else:
                 messages.success(request, f"Linked to {form.cleaned_data['case'].reference}.")
                 return redirect(form.cleaned_data["case"])
-    return render(request, "cancellations/unmatched_detail.html", {
-        "email": email, "form": form, "documents": email.documents.all(),
-    })
+    return _unmatched_inbox(request, email, form)

@@ -172,6 +172,15 @@ class LinkEmailForm(forms.Form):
         required=False, label="I have checked that this sender genuinely represents the insurer",
     )
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Searchable labels: reference, policy, client and status
+        self.fields["case"].queryset = self.fields["case"].queryset.order_by("-pk")
+        self.fields["case"].widget.attrs.update({"size": 8, "class": "case-select"})
+        self.fields["case"].label_from_instance = lambda c: (
+            f"{c.reference} · {c.cover.policy_number} · {c.cover.client_name} ({c.get_status_display()})"
+        )
+
 
 class SearchForm(forms.Form):
     q = forms.CharField(required=False, label="Search")

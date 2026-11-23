@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}Unmatched inbox · IMOTH Cancellations{% endblock %}
+{% block header_title %}Unmatched Inbox{% endblock %}
+{% block page_description %}Insurer emails that need a human to link or dismiss — nothing here is linked automatically{% endblock %}
+{% block content %}
+
+{% for mb in mailboxes %}
+  {% if mb.last_error %}
+    <div class="alert alert--error" style="margin-bottom:14px">{% icon "alert-triangle" %}<div><strong>Mailbox problem</strong> — {{ mb.last_error }}</div></div>
+  {% endif %}
+{% endfor %}
+
+<div class="page-header">
+  <div class="page-header__title">
+    <h2>{{ emails|length }} email{{ emails|length|pluralize }} waiting</h2>
+    <p>
+      {% for mb in mailboxes %}Mailbox {{ mb.folder }} last checked {% if mb.last_polled_at %}{{ mb.last_polled_at|timesince }} ago{% else %}never{% endif %}.{% empty %}The mailbox has not been checked yet. Is the mail worker running?{% endfor %}
+    </p>
+  </div>
+</div>
+
+<div class="inbox{% if email %} has-selection{% endif %}">
+  <div class="inbox__listcol">
+    <section class="card">
+      <div class="card__head"><h2>{% icon "inbox" %}Emails</h2><span class="count-pill{% if emails %} is-hot{% endif %}">{{ emails|length }}</span></div>
+      {% if emails %}
+      <div class="inbox__list" role="list">
+        {% for e in emails %}
+          <a role="listitem" class="inbox-item{% if email and e.pk == email.pk %} is-selected{% endif %}" href="{% url 'cancellations:unmatched_detail' e.pk %}"
+             {% if email and e.pk == email.pk %}aria-current="true"{% endif %}>
+            <div class="inbox-item__top">
+              <span class="inbox-item__from">{{ e.from_email }}</span>
+              <span class="inbox-item__date">{{ e.received_at|date:"d M H:i" }}</span>
+            </div>
+            <div class="inbox-item__subject">{{ e.subject|default:"(no subject)" }}</div>
+            <div class="inbox-item__preview">{{ e.body|default:"(no text body)"|truncatechars:160 }}</div>
+            <div class="inbox-item__tags">
+              {% if e.suggested_case %}<span class="badge badge--warning">Possible {{ e.suggested_case.reference }}</span>{% endif %}
+              {% if e.documents.all %}<span class="badge badge--outline badge--plain">{% icon "paperclip" 12 %}{{ e.documents.all|length }}</span>{% endif %}
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+      {% else %}
+        {% include "components/empty_state.html" with icon="check-circle" title="Inbox is empty" text="Every insurer reply has been matched to its case." %}
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="inbox__detailcol">
+    {% if email %}
+    <section class="card">
+      <div class="card__head" style="align-items:flex-start">
+        <a class="btn btn-ghost btn-icon mobile-only" href="{% url 'cancellations:unmatched_list' %}" aria-label="Back to inbox">{% icon "arrow-left" %}</a>
+        <div style="flex:1;min-width:0">
+          <h2 style="display:block;overflow-wrap:anywhere">{{ email.subject|default:"(no subject)" }}</h2>
+          <div class="muted small">{{ email.received_at|date:"l d M Y, H:i" }}</div>
+        </div>
+      </div>
+      <div class="card__body">
+        <dl class="kv kv--compact">
+          <dt>From</dt><dd>{{ email.from_email }}</dd>
+          <dt>To</dt><dd>{{ email.to_emails|default:"—" }}</dd>
+          {% if email.cc_emails %}<dt>Cc</dt><dd>{{ email.cc_emails }}</dd>{% endif %}
+          <dt>Why unmatched</dt><dd class="help" style="font-weight:500">{{ email.match_note|default:"—" }}</dd>
+        </dl>
+        <pre class="mail">{{ email.body|default:"(no text body)" }}</pre>
+        {% if documents or email.skipped_attachments %}
+        <div class="attachments">
+          {% for d in documents %}<a class="attachment" href="{% url 'cancellations:document_download' d.pk %}">{% icon "paperclip" 14 %}{{ d.original_name }}</a>{% endfor %}
+          {% for s in email.skipped_attachments %}<span class="attachment attachment--bad" title="{{ s.reason }}">{% icon "alert-triangle" 14 %}Not stored: {{ s.filename }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <form method="post" class="card__foot" style="background:#fff">
+        {% csrf_token %}
+        <h3 style="display:flex;gap:8px;align-items:center;margin-bottom:12px">{% icon "link" 16 %}Link to a case</h3>
+        {% if email.suggested_case %}
+          <div class="alert alert--warning" style="margin-bottom:12px">{% icon "alert-triangle" %}
+            <div>This looks like <strong>{{ email.suggested_case.reference }}</strong>, but it was not attached automatically: {{ email.match_note }}</div></div>
+        {% endif %}
+        {% if form.non_field_errors %}<ul class="errorlist nonfield">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <div class="field case-picker{% if form.case.errors %} has-error{% endif %}">
+          <label for="case-search">Find the case</label>
+          <div class="input-icon">{% icon "search" %}<input type="search" id="case-search" placeholder="Filter by reference, policy number or client" autocomplete="off"></div>
+          {{ form.case }}
+          <div class="help" id="case-count"></div>
+          {{ form.case.errors }}
+        </div>
+        <label class="check" style="margin-top:14px">{{ form.sender_checked }}<span>{{ form.sender_checked.label }}<br><span class="help">Required when the sender is not one of the insurer's known addresses.</span></span></label>
+        <div class="btn-row" style="margin-top:16px;justify-content:flex-end">
+          <button class="btn btn-ghost" name="dismiss" value="1" formnovalidate
+                  data-confirm-click="Dismiss this email as unrelated? It will leave the inbox but stays on record." data-confirm-title="Dismiss email" data-confirm-ok="Dismiss" data-confirm-danger>{% icon "x-circle" 16 %}Dismiss as unrelated</button>
+          <button class="btn btn-primary" data-busy-label="Linking…">{% icon "link" 16 %}<span data-label>Link email</span></button>
+        </div>
+      </form>
+    </section>
+    {% else %}
+    <section class="card">
+      {% if emails %}
+        {% include "components/empty_state.html" with icon="mail-open" title="Select an email" text="Choose an email on the left to read it and link it to a case." %}
+      {% else %}
+        {% include "components/empty_state.html" with icon="inbox" title="Nothing to reconcile" text="Unmatched insurer emails will appear here for review." %}
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const search = document.getElementById("case-search");
+  const select = document.querySelector("select.case-select");
+  if (!search || !select) return;
+  const count = document.getElementById("case-count");
+  function filter() {
+    const terms = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    Array.from(select.options).forEach(function (opt) {
+      if (!opt.value) { opt.hidden = terms.length > 0; return; }
+      const match = terms.every(t => opt.text.toLowerCase().includes(t));
+      opt.hidden = !match && !opt.selected;
+      if (match) shown++;
+    });
+    count.textContent = terms.length ? shown + " matching case" + (shown === 1 ? "" : "s") : "";
+  }
+  search.addEventListener("input", filter);
+  search.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowDown") { e.preventDefault(); select.focus(); }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const first = Array.from(select.options).find(o => o.value && !o.hidden);
+      if (first) { select.value = first.value; select.focus(); }
+    }
+  });
+})();
+</script>
+{% endblock %}
