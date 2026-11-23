@@ -64,6 +64,7 @@ def template_context(case):
         "reason_code": case.reason_code,
         "reason_note": case.reason_note,
         "effective_date": case.effective_date.strftime("%d %B %Y") if case.effective_date else "",
+        "effective_time": case.effective_time.strftime("%H:%M") if case.effective_time else "",
         "insurer_name": cover.insurer.name,
     }
 

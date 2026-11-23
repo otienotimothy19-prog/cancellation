@@ -269,7 +269,7 @@
         <dl class="kv kv--compact">
           <dt>Reason</dt><dd>{{ case.reason_label|default:"—" }}</dd>
           {% if case.reason_note %}<dt>Note</dt><dd>{{ case.reason_note|linebreaksbr }}</dd>{% endif %}
-          <dt>Requested date</dt><dd>{{ case.effective_date|date:"d M Y"|default:"—" }}</dd>
+          <dt>Requested date</dt><dd>{{ case.effective_date|date:"d M Y"|default:"—" }}{% if case.effective_date and case.effective_time %} at {{ case.effective_time|time:"H:i" }}{% endif %}</dd>
           {% if case.outstanding_amount is not None %}<dt>Outstanding</dt><dd>{{ case.outstanding_amount }}</dd>{% endif %}
           {% if case.notice_date %}<dt>Notice date</dt><dd>{{ case.notice_date|date:"d M Y" }}</dd>{% endif %}
           {% if case.new_policy_number %}<dt>New policy</dt><dd>{{ case.new_policy_number }}</dd>{% endif %}

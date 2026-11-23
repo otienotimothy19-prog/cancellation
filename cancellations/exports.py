@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 FIELDS = [
     "reference", "case_id", "status", "policy_number", "client_name", "insurer", "asset_reference",
-    "premium", "cover_start_date", "cover_end_date", "requested_effective_date", "effective_date",
+    "premium", "cover_start_date", "cover_end_date", "requested_effective_date", "requested_effective_time", "effective_date",
     "refund_amount", "currency", "reason_code", "confirmed_at",
 ]
 MAX_LIMIT = 500
@@ -75,6 +75,7 @@ def row(case):
         "cover_start_date": cover.start_date.isoformat() if cover.start_date else None,
         "cover_end_date": cover.end_date.isoformat() if cover.end_date else None,
         "requested_effective_date": case.effective_date.isoformat() if case.effective_date else None,
+        "requested_effective_time": case.effective_time.strftime("%H:%M") if case.effective_time else None,
         "effective_date": case.confirmed_effective_date.isoformat(),
         "refund_amount": str(case.refund_amount) if case.refund_amount is not None else None,
         "currency": settings.CURRENCY,

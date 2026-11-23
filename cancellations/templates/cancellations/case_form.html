@@ -73,13 +73,14 @@
       <div id="client-new" style="margin-bottom:16px">{% include "components/field.html" with field=cover_form.client_name required=True %}</div>
       <p id="client-existing" class="muted" style="margin:0 0 16px" hidden>{% icon "info" 16 %} Client details come from the selected cover.</p>
       {% endif %}
-      <div class="form-grid">
+      <div class="form-grid form-grid--3">
         {% include "components/field.html" with field=case_form.reason_code label="Cancellation reason" required=True %}
         {% if creating %}
           {% include "components/field.html" with field=case_form.effective_date label="Effective date" required=True help=effective_help %}
         {% else %}
-          {% include "components/field.html" with field=case_form.effective_date label="Effective date" required=True help="First day without cover. Must fall within the cover period." %}
+          {% include "components/field.html" with field=case_form.effective_date label="Effective date" required=True help="Must fall within the cover period." %}
         {% endif %}
+        {% include "components/field.html" with field=case_form.effective_time label="Effective time" help="Kenya time." %}
       </div>
       <div id="reason-needs" class="requirement" hidden>{% icon "info" 18 %}<span></span></div>
       <div class="form-grid" style="margin-top:16px" id="reason-extra">
@@ -298,7 +299,8 @@
       setSum("insurer", selectedText(q("cover-insurer")));
     }
     setSum("reason", selectedText(reason));
-    setSum("effective", fmtDate(q("case-effective_date").value));
+    const time = q("case-effective_time") ? q("case-effective_time").value : "";
+    setSum("effective", fmtDate(q("case-effective_date").value) + (q("case-effective_date").value && time ? " at " + time : ""));
     const file = q("doc-file").files[0];
     setSum("document", file ? `${file.name} (${selectedText(q("doc-doc_type")) || "type not chosen"})` : "");
 

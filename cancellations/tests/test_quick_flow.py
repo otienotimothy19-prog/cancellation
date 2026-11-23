@@ -130,3 +130,21 @@ class SimplifiedFormTests(TestCase):
 
         r = self.client.get(reverse("cancellations:case_create"))
         self.assertContains(r, f'value="{timezone.localdate().isoformat()}"')
+
+    def test_effective_time_defaults_to_now_and_reaches_the_email(self):
+        import datetime as dt
+
+        from cancellations.services.sending import render_email
+
+        r = self.client.get(reverse("cancellations:case_create"))
+        self.assertIsNotNone(r.context["case_form"]["effective_time"].value())
+        self.assertContains(r, 'type="time"')
+        self.client.post(reverse("cancellations:case_create"), {
+            "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-779", "cover-insurer": self.insurer.pk,
+            "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01", "case-effective_time": "14:30",
+            "doc-doc_type": "SIGNED_REQUEST", "doc-file": pdf_upload(), "action": "draft",
+        })
+        case = CancellationCase.objects.get()
+        self.assertEqual(case.effective_time, dt.time(14, 30))
+        self.assertIn("Effective date:  01 July 2026 at 14:30", render_email(case)[1])
+        self.assertContains(self.client.get(case.get_absolute_url()), "01 Jul 2026 at 14:30")

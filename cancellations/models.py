@@ -29,7 +29,7 @@ Vehicle/asset:   {{ asset_reference }}
 Certificate no.: {{ certificate_number }}
 Reason:          {{ reason }}{% if reason_note %}
 Notes:           {{ reason_note }}{% endif %}
-Effective date:  {{ effective_date }}
+Effective date:  {{ effective_date }}{% if effective_time %} at {{ effective_time }}{% endif %}
 
 Supporting documents are attached. Please reply to this email (keeping the
 reference {{ reference }} in the subject) to confirm the cancellation, the
@@ -56,7 +56,7 @@ class Insurer(models.Model):
         blank=True,
         help_text=(
             "Django template for the email body. Variables: reference, client_name, policy_number, "
-            "asset_reference, certificate_number, reason, reason_code, reason_note, effective_date, insurer_name, "
+            "asset_reference, certificate_number, reason, reason_code, reason_note, effective_date, effective_time, insurer_name, "
             "premium, start_date, end_date. Leave blank to use the default template."
         ),
     )
@@ -143,6 +143,7 @@ class CancellationCase(models.Model):
     reason_code = models.CharField(max_length=30, choices=REASON_CHOICES, blank=True)
     reason_note = models.TextField(blank=True)
     effective_date = models.DateField(null=True, blank=True)
+    effective_time = models.TimeField(null=True, blank=True, help_text="Time of day the cover should end (local time).")
 
     # Reason-specific details (which are required depends on reason_code; see reasons.py)
     outstanding_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)

@@ -69,11 +69,12 @@ class CaseForm(forms.ModelForm):
     class Meta:
         model = CancellationCase
         fields = [
-            "reason_code", "reason_note", "effective_date",
+            "reason_code", "reason_note", "effective_date", "effective_time",
             "outstanding_amount", "notice_date", "new_policy_number", "original_cover_reference",
         ]
         widgets = {
             "effective_date": DATE,
+            "effective_time": forms.TimeInput(attrs={"type": "time"}, format="%H:%M"),
             "notice_date": DATE,
             "reason_note": forms.Textarea(attrs={"rows": 3}),
         }
@@ -215,7 +216,7 @@ class InsurerForm(forms.ModelForm):
     TEMPLATE_VARIABLES = (
         "reference", "client_name", "policy_number", "asset_reference", "certificate_number", "premium",
         "start_date", "end_date",
-        "reason", "reason_code", "reason_note", "effective_date", "insurer_name",
+        "reason", "reason_code", "reason_note", "effective_date", "effective_time", "insurer_name",
     )
 
     class Meta:
