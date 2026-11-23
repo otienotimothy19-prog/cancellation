@@ -29,7 +29,9 @@ DRAFT ──send──▶ SENT ──staff review──▶ CONFIRMED | REJECTED 
 SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (cleared by a reply)
 ```
 
-1. **Create.** You pick an existing cover or enter a new one (client, policy number, insurer, vehicle/asset, premium, dates). You also choose a reason code, set the effective date (it must fall inside the cover period) and attach the supporting document. The case is saved as **DRAFT**. A cover can have only one open case.
+1. **Create.** You pick an existing cover or enter a new one (client, policy number, insurer, vehicle/asset, premium, dates). You also choose a reason code, set the effective date (it must fall inside the cover period) and attach the supporting document. A cover can have only one open case.
+   - **Save & send** (the usual path) first shows the exact email: To, Cc, subject and body. If anything required is missing, it lists that instead. One click on **Send now** saves and sends.
+   - **Save draft** keeps it as **DRAFT** to finish later. If sending turns out to be blocked, the case is saved as a draft with the reasons shown.
 2. **Send.** The app renders the insurer's own template, or the default one. It sends from `cancellation@imoth.co.ke` to the insurer's cancellation address, with the insurer's CC list copied in and **all** the case's client and staff documents attached. Each email carries:
    - the subject `Cancellation request IMOTH-CXL-000123 – Policy … – Client`
    - a `Reply-To` of `cancellation+CXL000123@imoth.co.ke`
@@ -55,11 +57,11 @@ SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (clea
    - marks the **cover CANCELLED**
    - stores the **cancellation certificate / credit note**, either by picking one of the reply's attachments or by uploading a file
 
-   The certificate can also be added later. A confirmed case **can't be closed until a certificate is stored**, and the dashboard lists the confirmed cases that still lack one.
+   **Once the certificate is stored, the case closes automatically**: at confirmation time, or later when you upload a document of type *Cancellation certificate / credit note*. Until then it stays CONFIRMED and the dashboard lists it under "certificate missing". Rejected and query cases are never closed automatically; use **Close case**.
 6. **SLA.** If a SENT case gets no insurer reply within the insurer's `sla_hours`, the staff member who created it gets a **reminder email**. The reminders are bundled into one email per person. If there's still no reply `SLA_STALE_AFTER_REMINDER_HOURS` later (default 24), the case is **flagged STALE**. STALE is a flag, not a status. Any reply linked to the case clears it. The count uses wall-clock hours.
 7. **Dashboard** (the home page) shows:
    - counts of open, stale, unmatched and confirmed-this-month cases, plus the month's refund total
-   - work lists: replies to review, stale cases, missing certificates and drafts
+   - work lists: replies to review (each with a **Review** button that jumps straight to that reply's decision form), stale cases, missing certificates and drafts
    - a search box for a policy number or an `IMOTH-CXL-…` reference; a single hit opens the case directly
 
 ### Refund calculation
