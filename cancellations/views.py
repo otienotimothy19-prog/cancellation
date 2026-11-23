@@ -11,14 +11,14 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .forms import CaseForm, CoverChoiceForm, DocumentForm, LinkEmailForm, ReviewForm, SearchForm
+from .forms import CaseForm, CoverChoiceForm, DocumentForm, FollowUpForm, LinkEmailForm, ReviewForm, SearchForm
 from .models import CancellationCase, CaseDocument, CaseEmail, MailboxState
 from .permissions import cancellations_role_required
 from .reasons import REASONS, DocType, doc_label
 from .services.documents import save_uploaded_document
 from .services.inbound import dismiss_email, link_email
 from .services.refunds import pro_rata_refund
-from .services.sending import SendBlocked, render_email, send_blockers, send_case
+from .services.sending import SendBlocked, follow_up_defaults, render_email, send_blockers, send_case, send_follow_up
 from .services.workflow import S, TransitionError, close_case, log_event, review_inbound_email
 
 BLOCKING_STATUSES = (S.DRAFT, S.SENT, S.QUERY, S.CONFIRMED)
@@ -190,11 +190,17 @@ def case_detail(request, pk):
         "preview_subject": preview_subject,
         "preview_body": preview_body,
         "can_close": case.status in (S.CONFIRMED, S.REJECTED, S.QUERY),
+        "follow_up_form": _follow_up_form(case) if case.status == S.QUERY else None,
         "requested_refund": (
             pro_rata_refund(case.cover.premium, case.cover.start_date, case.cover.end_date, case.effective_date)
             if case.effective_date else None
         ),
     })
+
+
+def _follow_up_form(case):
+    subject, body = follow_up_defaults(case)
+    return FollowUpForm(case=case, initial={"subject": subject, "body": body})
 
 
 @require_POST
@@ -210,6 +216,39 @@ def case_send(request, pk):
         messages.error(request, f"Sending failed and nothing was sent: {exc}")
     else:
         messages.success(request, f"{case.reference} sent to {case.cover.insurer.cancellation_email}.")
+    return redirect(case)
+
+
+@require_POST
+@cancellations_role_required
+def case_follow_up(request, pk):
+    case = get_object_or_404(CancellationCase.objects.select_related("cover__insurer"), pk=pk)
+    form = FollowUpForm(request.POST, request.FILES, case=case)
+    if not form.is_valid():
+        for errors in form.errors.values():
+            for e in errors:
+                messages.error(request, e)
+        return redirect(case)
+    data = form.cleaned_data
+    if case.status != S.QUERY:
+        messages.error(request, f"{case.reference} is {case.get_status_display()}; follow-ups answer an insurer query.")
+        return redirect(case)
+    # A new upload is kept on the case even if sending then fails (so it is not lost), and
+    # send_follow_up logs SEND_FAILED itself, so no outer transaction here.
+    docs = list(data["documents"])
+    if data["new_file"]:
+        new_doc = save_uploaded_document(case, data["new_file"], data["new_doc_type"], "staff", request.user)
+        log_event(case, "DOCUMENT_ADDED", request.user, case.status, case.status, str(new_doc))
+        docs.append(new_doc)
+    try:
+        send_follow_up(case, request.user, data["body"], docs, subject=data["subject"])
+    except SendBlocked as exc:
+        for problem in exc.problems:
+            messages.error(request, problem)
+    except Exception as exc:  # provider error: nothing sent, case stays QUERY
+        messages.error(request, f"Sending failed and nothing was sent: {exc}")
+    else:
+        messages.success(request, f"Reply sent to the insurer; {case.reference} is SENT again and the SLA has restarted.")
     return redirect(case)
 
 

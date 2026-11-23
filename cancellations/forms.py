@@ -1,7 +1,7 @@
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import CancellationCase, Cover, Insurer
+from .models import CancellationCase, CaseDocument, Cover, Insurer
 from .reasons import REASON_CHOICES, DocType
 from .services.documents import validate_uploaded_file
 
@@ -129,6 +129,37 @@ class ReviewForm(forms.Form):
         data = super().clean()
         if data.get("classification") == "CONFIRMATION" and not data.get("confirmed_effective_date"):
             self.add_error("confirmed_effective_date", "Enter the effective date the insurer confirmed.")
+        return data
+
+
+class FollowUpForm(forms.Form):
+    """Answer an insurer QUERY on the same email thread."""
+
+    subject = forms.CharField(max_length=300)
+    body = forms.CharField(widget=forms.Textarea(attrs={"rows": 12}), label="Message")
+    documents = forms.ModelMultipleChoiceField(
+        queryset=CaseDocument.objects.none(), required=False, widget=forms.CheckboxSelectMultiple,
+        label="Attach documents already on the case",
+    )
+    new_doc_type = forms.ChoiceField(label="New document type", choices=DocType.STAFF_UPLOAD_CHOICES, required=False)
+    new_file = forms.FileField(required=False, label="…and/or upload a new document to attach")
+
+    def __init__(self, *args, case=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if case is not None:
+            self.fields["documents"].queryset = case.documents.all()
+            self.fields["documents"].label_from_instance = lambda d: f"{d.original_name} ({d.get_type_display()})"
+
+    def clean_new_file(self):
+        f = self.cleaned_data.get("new_file")
+        if f:
+            validate_uploaded_file(f)
+        return f
+
+    def clean(self):
+        data = super().clean()
+        if data.get("new_file") and not data.get("new_doc_type"):
+            self.add_error("new_doc_type", "Choose the type of the new document.")
         return data
 
 

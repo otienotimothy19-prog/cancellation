@@ -141,7 +141,8 @@ class CancellationCase(models.Model):
 
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
-    sent_at = models.DateTimeField(null=True, blank=True, editable=False)
+    sent_at = models.DateTimeField(null=True, blank=True, editable=False)  # first request
+    last_sent_at = models.DateTimeField(null=True, blank=True, editable=False)  # latest request or follow-up; SLA clock
 
     # Recorded when the insurer's confirmation is accepted (Phase 2)
     confirmed_effective_date = models.DateField(null=True, blank=True, editable=False)
@@ -195,11 +196,12 @@ class CancellationCase(models.Model):
 
     @property
     def sla_due_at(self):
-        if not self.sent_at:
+        start = self.last_sent_at or self.sent_at
+        if not start:
             return None
         from datetime import timedelta
 
-        return self.sent_at + timedelta(hours=self.cover.insurer.sla_hours)
+        return start + timedelta(hours=self.cover.insurer.sla_hours)
 
     @classmethod
     def pk_from_reference(cls, text):
@@ -214,6 +216,7 @@ class CaseEmail(models.Model):
 
     class Classification(models.TextChoices):
         REQUEST = "REQUEST", "Cancellation request (sent)"
+        FOLLOW_UP = "FOLLOW_UP", "Follow-up to insurer (sent)"
         UNREVIEWED = "UNREVIEWED", "Not reviewed yet"
         CONFIRMATION = "CONFIRMATION", "Confirmation"
         REJECTION = "REJECTION", "Rejection"

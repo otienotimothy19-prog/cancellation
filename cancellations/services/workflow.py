@@ -13,7 +13,7 @@ S = CancellationCase.Status
 ALLOWED_TRANSITIONS = {
     S.DRAFT: {S.SENT},
     S.SENT: {S.CONFIRMED, S.REJECTED, S.QUERY},
-    S.QUERY: {S.CONFIRMED, S.REJECTED, S.CLOSED},
+    S.QUERY: {S.SENT, S.CONFIRMED, S.REJECTED, S.CLOSED},  # SENT = follow-up answering the query
     S.CONFIRMED: {S.CLOSED},
     S.REJECTED: {S.CLOSED},
     S.CLOSED: set(),
@@ -52,11 +52,16 @@ def transition(case, to_status, actor, action=None, note="", email=None):
     locked.status = to_status
     update_fields = ["status", "updated_at"]
     if to_status == S.SENT:
-        locked.sent_at = timezone.now()
-        update_fields.append("sent_at")
+        now = timezone.now()
+        locked.sent_at = locked.sent_at or now  # keeps the first request's time
+        locked.last_sent_at = now  # restarts the SLA clock
+        locked.sla_reminder_sent_at = None
+        locked.is_stale, locked.stale_at = False, None
+        update_fields += ["sent_at", "last_sent_at", "sla_reminder_sent_at", "is_stale", "stale_at"]
     locked.save(update_fields=update_fields)
     log_event(locked, action or to_status, actor, from_status, to_status, note, email)
-    case.status, case.sent_at = locked.status, locked.sent_at
+    for name in ("status", "sent_at", "last_sent_at", "sla_reminder_sent_at", "is_stale", "stale_at"):
+        setattr(case, name, getattr(locked, name))  # keep the caller's object in sync
     return locked
 
 

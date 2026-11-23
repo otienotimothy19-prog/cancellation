@@ -140,4 +140,111 @@ def _send_case(case, actor):
     return case
 
 
-__all__ = ["SendBlocked", "TransitionError", "render_email", "send_blockers", "send_case"]
+def query_email(case):
+    """The insurer reply being answered: the latest inbound email classified QUERY."""
+    return (case.emails.filter(direction=CaseEmail.Direction.INBOUND, classification=CaseEmail.Classification.QUERY)
+            .order_by("-received_at").first())
+
+
+def follow_up_defaults(case):
+    """Prefilled subject/body for answering the insurer's query."""
+    cover = case.cover
+    query = query_email(case)
+    subject = (query.subject if query and case.reference.lower() in query.subject.lower()
+               else f"Cancellation request {case.reference} – Policy {cover.policy_number} – {cover.client_name}")
+    if not subject.lower().startswith("re:"):
+        subject = f"Re: {subject}"
+    body = (
+        f"Dear {cover.insurer.name} Cancellations Team,\n\n"
+        f"Further to your query on our cancellation request {case.reference} "
+        f"(policy {cover.policy_number}, {cover.client_name}):\n\n\n\n"
+        f"Please reply keeping the reference {case.reference} in the subject.\n\n"
+        "Kind regards,\nIMOTH Cancellations\n"
+    )
+    if query and query.body.strip():
+        quoted = "\n".join(f"> {line}" for line in query.body.strip().splitlines()[:40])
+        when = query.received_at.strftime("%d %b %Y %H:%M")
+        body += f"\n\nOn {when}, {query.from_email} wrote:\n{quoted}\n"
+    return subject, body
+
+
+def send_follow_up(case, actor, body, documents=(), subject=None):
+    """Answer an insurer QUERY: email the insurer on the same thread and move the case back to SENT.
+
+    `documents` are CaseDocuments of this case to attach. Same all-or-nothing behaviour as
+    send_case: a provider error rolls back and the case stays in QUERY.
+    """
+    try:
+        return _send_follow_up(case, actor, body, documents, subject)
+    except SendBlocked:
+        raise
+    except Exception as exc:
+        logger.exception("Follow-up for %s failed", case.reference)
+        log_event(case, "SEND_FAILED", actor, case.status, case.status, f"Follow-up: {str(exc)[:480]}")
+        raise
+
+
+@transaction.atomic
+def _send_follow_up(case, actor, body, documents, subject):
+    case = CancellationCase.objects.select_for_update().select_related("cover__insurer").get(pk=case.pk)
+    problems = []
+    if case.status != S.QUERY:
+        problems.append(f"Case is {case.get_status_display()}; follow-ups answer an insurer query.")
+    if not (body or "").strip():
+        problems.append("Write the reply to the insurer.")
+    documents = list(documents)
+    if any(d.case_id != case.pk for d in documents):
+        problems.append("Attachments must be documents of this case.")
+    if problems:
+        raise SendBlocked(problems)
+
+    insurer = case.cover.insurer
+    query = query_email(case)
+    default_subject, _ = follow_up_defaults(case)
+    subject = (subject or "").strip() or default_subject
+    if case.reference.lower() not in subject.lower():
+        subject = f"{subject} [{case.reference}]"  # keep the reference so the next reply matches
+
+    # Reply to whoever raised the query (sender verified when it was reviewed), copying the
+    # insurer's cancellation address and CC list so the cancellations team keeps the thread.
+    to = query.headers.get("_from_address") if query else ""
+    to = (to or insurer.cancellation_email).lower()
+    cc = [a for a in dict.fromkeys([insurer.cancellation_email.lower(), *insurer.cc_addresses]) if a != to]
+
+    thread = [e.message_id for e in case.emails.order_by("received_at") if e.message_id.startswith("<")]
+    message_id = make_msgid(idstring=case.plus_token, domain=settings.MAIL_DOMAIN)
+    headers = {"Message-ID": message_id, "X-IMOTH-Reference": case.reference}
+    if query and query.message_id.startswith("<"):
+        headers["In-Reply-To"] = query.message_id
+    if thread:
+        headers["References"] = " ".join(thread[-10:])
+    msg = EmailMessage(subject=subject, body=body, from_email=settings.DEFAULT_FROM_EMAIL, to=[to], cc=cc,
+                       reply_to=[case.reply_to_address], headers=headers)
+    for doc in documents:
+        with doc.file.open("rb") as fh:
+            msg.attach(doc.original_name, fh.read(), doc.content_type or None)
+
+    email = CaseEmail.objects.create(
+        case=case, direction=CaseEmail.Direction.OUTBOUND, message_id=message_id,
+        in_reply_to=headers.get("In-Reply-To", ""), references=headers.get("References", ""),
+        from_email=settings.DEFAULT_FROM_EMAIL, to_emails=to, cc_emails=", ".join(cc), subject=subject, body=body,
+        classification=CaseEmail.Classification.FOLLOW_UP, sender_verified=True,
+    )
+    attached = ", ".join(d.original_name for d in documents) or "none"
+    transition(case, S.SENT, actor, action="FOLLOW_UP_SENT", email=email,
+               note=f"Answered insurer query; sent to {to}; attachments: {attached}. SLA restarted.")
+
+    msg.send(fail_silently=False)  # last step: raising here rolls back the records above
+
+    status = getattr(msg, "anymail_status", None)
+    provider_id = getattr(status, "message_id", None) if status else None
+    if provider_id:
+        email.provider_message_id = str(provider_id)
+        email.save(update_fields=["provider_message_id"])
+    return case
+
+
+__all__ = [
+    "SendBlocked", "TransitionError", "follow_up_defaults", "render_email", "send_blockers", "send_case",
+    "send_follow_up",
+]

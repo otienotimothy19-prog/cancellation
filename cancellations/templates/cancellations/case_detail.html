@@ -87,6 +87,27 @@
   {% endif %}
 </div>
 
+{% if follow_up_form %}
+<div class="card" id="follow-up" style="border-left:4px solid var(--warn)">
+  <h2>Reply to the insurer's query</h2>
+  <p class="muted">Goes to whoever raised the query, with the insurer's cancellation address and CC list copied, on the same email thread. The case returns to SENT and the {{ case.cover.insurer.sla_hours }} h SLA restarts.</p>
+  <form method="post" enctype="multipart/form-data" action="{% url 'cancellations:case_follow_up' case.pk %}"
+        data-confirm="Send this reply to the insurer?">
+    {% csrf_token %}
+    {{ follow_up_form.subject.label_tag }}{{ follow_up_form.subject }}
+    {{ follow_up_form.body.label_tag }}{{ follow_up_form.body }}
+    {% if follow_up_form.documents.field.queryset.exists %}
+      <label>{{ follow_up_form.documents.label }}</label><div class="radio-list">{{ follow_up_form.documents }}</div>
+    {% endif %}
+    <div class="row">
+      <div>{{ follow_up_form.new_doc_type.label_tag }}{{ follow_up_form.new_doc_type }}</div>
+      <div>{{ follow_up_form.new_file.label_tag }}{{ follow_up_form.new_file }}</div>
+    </div>
+    <p><button class="btn">Send reply to insurer</button></p>
+  </form>
+</div>
+{% endif %}
+
 {% if preview_body %}
 <div class="card">
   <h2>Email preview</h2>
@@ -101,7 +122,7 @@
   {% for e in emails %}
     <div style="border-top:1px solid var(--line);padding:10px 0">
       <div class="row" style="align-items:center">
-        <div><strong>{% if e.direction == "OUT" %}→ Sent{% else %}← Received{% endif %}</strong>
+        <div><strong>{% if e.direction == "OUT" %}→ {% if e.classification == "FOLLOW_UP" %}Follow-up sent{% else %}Sent{% endif %}{% else %}← Received{% endif %}</strong>
           <span class="muted">{{ e.received_at|date:"d M Y H:i" }} · {{ e.from_email }}</span></div>
         <div style="text-align:right">
           <span class="badge">{{ e.get_classification_display }}</span>

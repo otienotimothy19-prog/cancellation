@@ -1,6 +1,6 @@
 """SLA follow-up for requests the insurer has not answered.
 
-A SENT case with no insurer reply (no inbound email on the case since it was sent):
+A SENT case with no insurer reply (no inbound email since the last request or follow-up):
   1. once insurer.sla_hours have passed  -> email a reminder to the staff member (one digest per person)
   2. SLA_STALE_AFTER_REMINDER_HOURS later -> flag the case STALE
 A reply clears the flag (see workflow.note_reply_received). Hours are wall-clock hours.
@@ -33,9 +33,9 @@ class SlaResult:
 
 def awaiting_reply():
     replies = CaseEmail.objects.filter(
-        case=OuterRef("pk"), direction=CaseEmail.Direction.INBOUND, received_at__gte=OuterRef("sent_at"),
+        case=OuterRef("pk"), direction=CaseEmail.Direction.INBOUND, received_at__gte=OuterRef("last_sent_at"),
     )
-    return (CancellationCase.objects.filter(status=S.SENT, sent_at__isnull=False)
+    return (CancellationCase.objects.filter(status=S.SENT, last_sent_at__isnull=False)
             .annotate(has_reply=Exists(replies)).filter(has_reply=False)
             .select_related("cover__insurer", "created_by"))
 
@@ -74,7 +74,7 @@ def check_sla(now=None):
 def _flag_stale(case, now, result):
     # Conditional update so two workers can never flag (and log) the same case twice.
     if CancellationCase.objects.filter(pk=case.pk, status=S.SENT, is_stale=False).update(is_stale=True, stale_at=now):
-        hours = (now - case.sent_at).total_seconds() / 3600
+        hours = (now - case.last_sent_at).total_seconds() / 3600
         log_event(case, "FLAGGED_STALE", None, case.status, case.status,
                   f"No insurer reply {hours:.0f} h after sending (SLA {case.cover.insurer.sla_hours} h); reminder sent "
                   f"{timezone.localtime(case.sla_reminder_sent_at):%d %b %H:%M}")
@@ -89,7 +89,7 @@ def _send_reminder(to, cases, now, result):
             return
         lines = []
         for c in claimed:
-            sent = timezone.localtime(c.sent_at)
+            sent = timezone.localtime(c.last_sent_at)
             url = settings.APP_BASE_URL.rstrip("/") + reverse("cancellations:case_detail", args=[c.pk]) if settings.APP_BASE_URL else ""
             lines.append(
                 f"- {c.reference}  {c.cover.client_name}, policy {c.cover.policy_number}, {c.cover.insurer}\n"
