@@ -37,7 +37,10 @@ SQLITE_REVERSE = [
 def add_triggers(apps, schema_editor):
     vendor = schema_editor.connection.vendor
     if vendor == "postgresql":
-        schema_editor.execute(PG_FORWARD)
+        # Raw cursor, no params: the PL/pgSQL body contains a literal "%" that the schema
+        # editor would otherwise treat as a query placeholder.
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute(PG_FORWARD)
     elif vendor == "sqlite":
         for sql in SQLITE_FORWARD:
             schema_editor.execute(sql)
@@ -46,7 +49,8 @@ def add_triggers(apps, schema_editor):
 def drop_triggers(apps, schema_editor):
     vendor = schema_editor.connection.vendor
     if vendor == "postgresql":
-        schema_editor.execute(PG_REVERSE)
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute(PG_REVERSE)
     elif vendor == "sqlite":
         for sql in SQLITE_REVERSE:
             schema_editor.execute(sql)
