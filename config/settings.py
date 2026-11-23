@@ -93,7 +93,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LOGIN_URL = "login"
-LOGIN_REDIRECT_URL = "cancellations:case_list"
+LOGIN_REDIRECT_URL = "cancellations:dashboard"
 LOGOUT_REDIRECT_URL = "login"
 
 LANGUAGE_CODE = "en-gb"
@@ -209,3 +209,15 @@ INBOUND_AUTHSERV_ID = env("INBOUND_AUTHSERV_ID", "mx.zohomail.com" if EMAIL_PROV
 # Which header carries the receiving server's verdict. Zoho may stamp
 # "ARC-Authentication-Results" instead; check a real reply with `manage.py check_mailbox`.
 INBOUND_AUTH_HEADER = env("INBOUND_AUTH_HEADER", "Authentication-Results")
+
+# --- Exports / API ------------------------------------------------------------
+CURRENCY = env("CURRENCY", "KES")
+# Bearer tokens accepted by /api/confirmed-cancellations/ (comma separated, one per consuming system).
+EXPORT_API_TOKENS = env_list("EXPORT_API_TOKENS")
+
+# --- SLA ----------------------------------------------------------------------
+# Reminder goes to the user who created the case (their email), else this address.
+SLA_ALERT_EMAIL = env("SLA_ALERT_EMAIL", "")
+SLA_STALE_AFTER_REMINDER_HOURS = int(env("SLA_STALE_AFTER_REMINDER_HOURS", "24"))
+SLA_CHECK_INTERVAL = int(env("SLA_CHECK_INTERVAL", "300"))  # seconds, in the worker loop
+APP_BASE_URL = env("APP_BASE_URL", "")  # e.g. https://cancellations.imoth.co.ke (links in reminder emails)

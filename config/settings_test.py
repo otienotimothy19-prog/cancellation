@@ -21,3 +21,4 @@ STORAGES = {
 }
 
 INBOUND_AUTHSERV_ID = "mx.provider.test"
+EXPORT_API_TOKENS = ["test-token-commission"]
