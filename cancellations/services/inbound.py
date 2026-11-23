@@ -189,30 +189,59 @@ def _aligned(domain_a, domain_b):
     return domain_a == domain_b or domain_a.endswith("." + domain_b) or domain_b.endswith("." + domain_a)
 
 
-def _header(msg, name):
-    """Topmost occurrence only: the receiving provider prepends its own result headers,
-    so later copies may have been written by the sender and are not trusted."""
+def _header_values(msg, name):
+    """All occurrences of a header, topmost first."""
+    values = []
     for key, value in msg.headers.items():
         if key.lower() == name.lower():
-            return value.split("\n", 1)[0]
-    return ""
+            values.extend(v for v in value.split("\n") if v.strip())
+    return values
+
+
+def _first(msg, name):
+    """Topmost occurrence only: the receiving provider prepends its own result headers,
+    so later copies may have been written by the sender and are not trusted."""
+    values = _header_values(msg, name)
+    return values[0] if values else ""
+
+
+# Provider-written SPF result headers (topmost copy), keyed by EMAIL_PROVIDER.
+PROVIDER_SPF_HEADERS = {"postmark": "Received-SPF", "mailgun": "X-Mailgun-Spf"}
+
+
+def _trusted_auth_results(msg):
+    """Authentication-Results headers written by our own receiving server (matching authserv-id)."""
+    servid = (getattr(settings, "INBOUND_AUTHSERV_ID", "") or "").strip().lower()
+    if not servid:
+        return []
+    return [v for v in _header_values(msg, "Authentication-Results") if v.split(";", 1)[0].strip().lower() == servid]
 
 
 def sender_authentication(msg):
-    """Return (passed, reason) using the receiving provider's SPF/DKIM/DMARC results.
+    """Return (passed, reason) using the receiving provider's SPF/DMARC results.
 
-    Pass requires positive evidence: dmarc=pass, or an SPF pass for an envelope sender
-    aligned with the From domain. An explicit DMARC fail always fails.
+    Only results written by our provider are read: Authentication-Results whose authserv-id
+    equals INBOUND_AUTHSERV_ID, and the provider's own SPF header. Any fail/softfail fails.
+    Pass requires positive evidence: dmarc=pass, or SPF pass for an envelope sender aligned
+    with the From domain.
     """
     from_domain = _domain(sender_address(msg))
-    auth_results = _header(msg, "Authentication-Results")
-    if re.search(r"\bdmarc=fail\b", auth_results, re.IGNORECASE):
+    results = _trusted_auth_results(msg)
+    joined = " ".join(results)
+    if re.search(r"\bdmarc=fail\b", joined, re.IGNORECASE):
         return False, "DMARC failed"
-    if re.search(r"\bdmarc=pass\b", auth_results, re.IGNORECASE):
+
+    spf_values = [m.group(1).lower() for m in re.finditer(r"\bspf=(\w+)", joined, re.IGNORECASE)]
+    spf_header = PROVIDER_SPF_HEADERS.get(getattr(settings, "EMAIL_PROVIDER", ""))
+    if spf_header and _first(msg, spf_header):
+        word = re.match(r"\s*(\w+)", _first(msg, spf_header))
+        spf_values.append(word.group(1).lower() if word else "")
+    if any(v in ("fail", "softfail") for v in spf_values):
+        return False, "SPF failed"
+
+    if re.search(r"\bdmarc=pass\b", joined, re.IGNORECASE):
         return True, "DMARC pass"
-    spf = " ".join([_header(msg, "Received-SPF"), _header(msg, "X-Mailgun-Spf")])
-    spf_auth = re.search(r"\bspf=pass\b", auth_results, re.IGNORECASE)
-    if (re.match(r"\s*pass\b", spf, re.IGNORECASE) or spf_auth) and _aligned(_domain(msg.envelope_sender), from_domain):
+    if "pass" in spf_values and _aligned(_domain(msg.envelope_sender), from_domain):
         return True, "SPF pass, aligned envelope sender"
     if not getattr(settings, "INBOUND_REQUIRE_SENDER_AUTH", True):
         return True, "Sender authentication not required (INBOUND_REQUIRE_SENDER_AUTH=false)"

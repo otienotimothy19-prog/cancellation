@@ -19,3 +19,5 @@ STORAGES = {
     },
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+
+INBOUND_AUTHSERV_ID = "mx.provider.test"

@@ -185,3 +185,6 @@ LOGGING = {
 # addresses AND the receiving provider recorded SPF/DMARC pass for it. Set to false only
 # if your provider adds no authentication headers (replies then still need a known address).
 INBOUND_REQUIRE_SENDER_AUTH = env_bool("INBOUND_REQUIRE_SENDER_AUTH", True)
+# authserv-id of the Authentication-Results header your provider writes (the text before the
+# first ";"). Headers with any other id are ignored because senders can forge them.
+INBOUND_AUTHSERV_ID = env("INBOUND_AUTHSERV_ID", "")
