@@ -44,7 +44,15 @@
       {% if case.original_cover_reference %}<dt>Original cover ref.</dt><dd>{{ case.original_cover_reference }}</dd>{% endif %}
       <dt>Reply-To</dt><dd class="muted">{{ case.reply_to_address }}</dd>
       <dt>Created</dt><dd>{{ case.created_at|date:"d M Y H:i" }} by {{ case.created_by }}</dd>
-      {% if case.sent_at %}<dt>Sent</dt><dd>{{ case.sent_at|date:"d M Y H:i" }}</dd>{% endif %}
+      {% if case.sent_at %}<dt>Sent</dt><dd>{{ case.sent_at|date:"d M Y H:i" }}</dd>
+        {% if case.status == "SENT" %}<dt>Reply due</dt><dd>{{ case.sla_due_at|date:"d M Y H:i" }} ({{ case.cover.insurer.sla_hours }} h SLA){% if case.sla_reminder_sent_at %} · reminder sent {{ case.sla_reminder_sent_at|date:"d M H:i" }}{% endif %}</dd>{% endif %}
+      {% endif %}
+      {% if case.confirmed_at %}
+        <dt>Confirmed effective</dt><dd><strong>{{ case.confirmed_effective_date|date:"d M Y" }}</strong></dd>
+        <dt>Refund (pro-rata)</dt><dd><strong>{{ case.refund_amount }}</strong></dd>
+        <dt>Confirmed</dt><dd>{{ case.confirmed_at|date:"d M Y H:i" }}</dd>
+        <dt>Certificate</dt><dd>{% if case.has_certificate %}<span class="badge s-CONFIRMED">✓ stored</span>{% else %}<span class="badge s-REJECTED">missing: upload it below (type “Cancellation certificate / credit note”)</span>{% endif %}</dd>
+      {% endif %}
     </dl>
     {% if can_close %}
     <form method="post" action="{% url 'cancellations:case_close' case.pk %}" style="margin-top:12px" data-confirm="Close {{ case.reference }}? Closed cases cannot be reopened.">{% csrf_token %}
@@ -106,10 +114,24 @@
       {% for d in e.documents.all %}<div>📎 <a href="{% url 'cancellations:document_download' d.pk %}">{{ d.original_name }}</a></div>{% endfor %}
       {% for s in e.skipped_attachments %}<div class="muted">⚠ Attachment not stored: {{ s.filename }} — {{ s.reason }}</div>{% endfor %}
       {% if e.direction == "IN" and e.classification == "UNREVIEWED" and case.status != "CLOSED" %}
-      <form method="post" action="{% url 'cancellations:email_review' e.pk %}" class="card" style="margin-top:8px;background:#fbfcfe">
+      <form method="post" enctype="multipart/form-data" action="{% url 'cancellations:email_review' e.pk %}" class="card review-form" style="margin-top:8px;background:#fbfcfe">
         {% csrf_token %}
         <strong>Review this reply</strong>
         <div class="radio-list">{{ review_form.classification }}</div>
+        <div class="confirm-fields" style="display:none">
+          <div class="row">
+            <div><label>Effective date confirmed by the insurer</label>
+              <input type="date" name="confirmed_effective_date" value="{{ case.effective_date|date:'Y-m-d' }}"
+                     min="{{ case.cover.start_date|date:'Y-m-d' }}" max="{{ case.cover.end_date|date:'Y-m-d' }}"></div>
+            <div class="muted" style="align-self:center">The pro-rata refund of unearned premium is calculated from this date{% if requested_refund is not None %} ({{ requested_refund }} at the requested date){% endif %}. The cover will be marked CANCELLED.</div>
+          </div>
+          <label>Cancellation certificate / credit note</label>
+          {% for d in e.documents.all %}
+            <div><label style="font-weight:400"><input type="radio" name="certificate_doc" value="{{ d.pk }}"> {{ d.original_name }} (attached to this email)</label></div>
+          {% endfor %}
+          <div><label style="font-weight:400"><input type="radio" name="certificate_doc" value="" checked> {% if e.documents.all %}None of these / not received yet{% else %}Not received yet{% endif %}</label></div>
+          {{ review_form.certificate_file.label_tag }}{{ review_form.certificate_file }}
+        </div>
         {{ review_form.note.label_tag }}{{ review_form.note }}
         <p><button class="btn">Record decision</button></p>
       </form>
@@ -131,4 +153,17 @@
     </tbody>
   </table>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll(".review-form").forEach(form => {
+    const box = form.querySelector(".confirm-fields");
+    const sync = () => {
+      const picked = form.querySelector("input[name=classification]:checked");
+      box.style.display = picked && picked.value === "CONFIRMATION" ? "" : "none";
+    };
+    form.querySelectorAll("input[name=classification]").forEach(r => r.addEventListener("change", sync));
+    sync();
+  });
+</script>
 {% endblock %}

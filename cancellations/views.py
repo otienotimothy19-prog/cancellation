@@ -13,6 +13,7 @@ from .permissions import cancellations_role_required
 from .reasons import REASONS, doc_label
 from .services.documents import save_uploaded_document
 from .services.inbound import dismiss_email, link_email
+from .services.refunds import pro_rata_refund
 from .services.sending import SendBlocked, render_email, send_blockers, send_case
 from .services.workflow import S, TransitionError, close_case, log_event, review_inbound_email
 
@@ -127,6 +128,10 @@ def case_detail(request, pk):
         "preview_subject": preview_subject,
         "preview_body": preview_body,
         "can_close": case.status in (S.CONFIRMED, S.REJECTED, S.QUERY),
+        "requested_refund": (
+            pro_rata_refund(case.cover.premium, case.cover.start_date, case.cover.end_date, case.effective_date)
+            if case.effective_date else None
+        ),
     })
 
 
@@ -185,15 +190,30 @@ def document_download(request, doc_id):
 @cancellations_role_required
 def email_review(request, email_id):
     email = get_object_or_404(CaseEmail.objects.select_related("case"), pk=email_id, case__isnull=False)
-    form = ReviewForm(request.POST)
+    form = ReviewForm(request.POST, request.FILES)
     if form.is_valid():
+        data = form.cleaned_data
+        cert_doc = None
+        if data["certificate_doc"]:
+            cert_doc = email.documents.filter(pk=data["certificate_doc"]).first()
         try:
-            review_inbound_email(email, form.cleaned_data["classification"], request.user, form.cleaned_data["note"])
-            messages.success(request, f"Reply recorded; case is now {email.case.get_status_display()}.")
+            case = review_inbound_email(
+                email, data["classification"], request.user, data["note"],
+                confirmed_effective_date=data["confirmed_effective_date"],
+                certificate_doc=cert_doc, certificate_upload=data["certificate_file"],
+            )
+            msg = f"Reply recorded; case is now {case.get_status_display()}."
+            if case.status == S.CONFIRMED:
+                msg += f" Cover cancelled; pro-rata refund {case.refund_amount}."
+                if not case.has_certificate:
+                    msg += " Remember to store the cancellation certificate / credit note."
+            messages.success(request, msg)
         except TransitionError as exc:
             messages.error(request, str(exc))
     else:
-        messages.error(request, "Choose an outcome for the reply.")
+        for errors in form.errors.values():
+            for e in errors:
+                messages.error(request, e)
     return redirect(email.case)
 
 

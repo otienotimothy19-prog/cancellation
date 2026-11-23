@@ -1,3 +1,5 @@
+import datetime as dt
+
 from django.db import DatabaseError, transaction
 from django.test import TestCase
 
@@ -7,9 +9,12 @@ from cancellations.services.workflow import (
     ALLOWED_TRANSITIONS, S, TransitionError, close_case, review_inbound_email, transition,
 )
 
-from .factories import inbound, make_case, make_sent_case, make_user
+from cancellations.reasons import DocType
+
+from .factories import attach, inbound, make_case, make_sent_case, make_user
 
 C = CaseEmail.Classification
+EFF = dt.date(2026, 6, 30)
 
 
 class TransitionTests(TestCase):
@@ -45,6 +50,9 @@ class TransitionTests(TestCase):
         case = make_sent_case(self.user)
         transition(case, S.QUERY, self.user)
         transition(case, S.CONFIRMED, self.user)
+        with self.assertRaises(TransitionError):  # certificate / credit note required first
+            close_case(case, self.user)
+        attach(case, self.user, DocType.CERTIFICATE)
         close_case(case, self.user)
         case.refresh_from_db()
         self.assertEqual(case.status, S.CLOSED)
@@ -75,14 +83,14 @@ class ReviewTests(TestCase):
         self.assertEqual(self.case.status, S.SENT)
 
     def test_confirm(self):
-        review_inbound_email(self.reply, C.CONFIRMATION, self.user, "Insurer confirmed")
+        review_inbound_email(self.reply, C.CONFIRMATION, self.user, "Insurer confirmed", confirmed_effective_date=EFF)
         self.case.refresh_from_db()
         self.reply.refresh_from_db()
         self.assertEqual(self.case.status, S.CONFIRMED)
         self.assertEqual(self.reply.classification, C.CONFIRMATION)
         self.assertEqual(self.reply.reviewed_by, self.user)
-        ev = self.case.events.last()
-        self.assertEqual((ev.action, ev.email, ev.actor), ("MARKED_CONFIRMED", self.reply, self.user))
+        ev = self.case.events.get(action="MARKED_CONFIRMED")
+        self.assertEqual((ev.from_status, ev.to_status, ev.email, ev.actor), (S.SENT, S.CONFIRMED, self.reply, self.user))
 
     def test_reject_and_query(self):
         for cls, status in [(C.REJECTION, S.REJECTED), (C.QUERY, S.QUERY)]:
@@ -96,12 +104,12 @@ class ReviewTests(TestCase):
     def test_query_then_confirm(self):
         review_inbound_email(self.reply, C.QUERY, self.user)
         reply2, _ = ingest(inbound(message_id="<r2@insurer.test>", subject=f"Re: {self.case.reference}"))
-        review_inbound_email(reply2, C.CONFIRMATION, self.user)
+        review_inbound_email(reply2, C.CONFIRMATION, self.user, confirmed_effective_date=EFF)
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, S.CONFIRMED)
 
     def test_cannot_confirm_twice(self):
-        review_inbound_email(self.reply, C.CONFIRMATION, self.user)
+        review_inbound_email(self.reply, C.CONFIRMATION, self.user, confirmed_effective_date=EFF)
         reply2, _ = ingest(inbound(message_id="<r3@insurer.test>", subject=f"Re: {self.case.reference}"))
         with self.assertRaises(TransitionError):
             review_inbound_email(reply2, C.REJECTION, self.user)

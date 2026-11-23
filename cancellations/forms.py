@@ -114,6 +114,22 @@ class ReviewForm(forms.Form):
         ("INFO", "Information only — no status change"),
     ], widget=forms.RadioSelect)
     note = forms.CharField(widget=forms.Textarea(attrs={"rows": 2}), required=False)
+    confirmed_effective_date = forms.DateField(required=False, widget=DATE,
+                                               label="Effective date confirmed by the insurer")
+    certificate_doc = forms.IntegerField(required=False)
+    certificate_file = forms.FileField(required=False, label="…or upload the certificate / credit note")
+
+    def clean_certificate_file(self):
+        f = self.cleaned_data.get("certificate_file")
+        if f:
+            validate_uploaded_file(f)
+        return f
+
+    def clean(self):
+        data = super().clean()
+        if data.get("classification") == "CONFIRMATION" and not data.get("confirmed_effective_date"):
+            self.add_error("confirmed_effective_date", "Enter the effective date the insurer confirmed.")
+        return data
 
 
 class LinkEmailForm(forms.Form):

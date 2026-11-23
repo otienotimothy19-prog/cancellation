@@ -138,7 +138,7 @@ class ReplyPagesTests(TestCase):
         page = self.client.get(self.case.get_absolute_url())
         self.assertContains(page, "Review this reply")
         self.assertContains(page, "Cancelled wef 30/06")
-        self.client.post(reverse("cancellations:email_review", args=[reply.pk]), {"classification": "CONFIRMATION"})
+        self.client.post(reverse("cancellations:email_review", args=[reply.pk]), {"classification": "CONFIRMATION", "confirmed_effective_date": "2026-06-30"})
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, S.CONFIRMED)
 

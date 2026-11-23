@@ -142,6 +142,14 @@ class CancellationCase(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True, editable=False)
+
+    # Recorded when the insurer's confirmation is accepted (Phase 2)
+    confirmed_effective_date = models.DateField(null=True, blank=True, editable=False)
+    confirmed_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True)
+
+    # SLA tracking
+    sla_reminder_sent_at = models.DateTimeField(null=True, blank=True, editable=False)
+    stale_at = models.DateTimeField(null=True, blank=True, editable=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -180,6 +188,18 @@ class CancellationCase(models.Model):
         if self.cover_id and self.cover.insurer.requires_signed_form:
             types.append(DocType.SIGNED_FORM)
         return types
+
+    @property
+    def has_certificate(self):
+        return self.documents.filter(type=DocType.CERTIFICATE).exists()
+
+    @property
+    def sla_due_at(self):
+        if not self.sent_at:
+            return None
+        from datetime import timedelta
+
+        return self.sent_at + timedelta(hours=self.cover.insurer.sla_hours)
 
     @classmethod
     def pk_from_reference(cls, text):

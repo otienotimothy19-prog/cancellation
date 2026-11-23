@@ -23,7 +23,7 @@ from django.utils import timezone
 from ..models import CancellationCase, CaseEmail
 from ..reasons import DocType
 from .documents import save_bytes_document
-from .workflow import S, log_event
+from .workflow import S, log_event, note_reply_received
 
 logger = logging.getLogger(__name__)
 
@@ -320,6 +320,7 @@ def ingest(msg: InboundEmail):
             if case:
                 log_event(case, "EMAIL_RECEIVED", None, case.status, case.status,
                           f"Matched by {email.get_matched_by_display()}: {note}", email)
+                note_reply_received(case, email)
     except IntegrityError:
         # A concurrent delivery of the same message won the race.
         return CaseEmail.objects.get(message_id=message_id), False
@@ -346,6 +347,7 @@ def link_email(email, case, actor, sender_checked=False):
     email.documents.update(case=case)
     note = "Linked manually" + ("" if known else f"; sender {email.from_email} verified by {actor}")
     log_event(case, "EMAIL_LINKED", actor, case.status, case.status, note, email)
+    note_reply_received(case, email)
     return email
 
 
