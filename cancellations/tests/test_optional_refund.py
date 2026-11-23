@@ -24,7 +24,7 @@ class OptionalRefundFieldsTests(TestCase):
 
     def data(self, **overrides):
         d = {
-            "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
+            "cover-client_name": "Peter Otieno", "cover-certificate_number": "CMTR-777", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
             "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
             "doc-doc_type": "SIGNED_REQUEST", "doc-source": "client",
         }

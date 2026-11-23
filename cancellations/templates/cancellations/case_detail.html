@@ -2,14 +2,14 @@
 {% load ui %}
 {% block title %}{{ case.reference }} · IMOTH Cancellations{% endblock %}
 {% block header_title %}{{ case.reference }}{% endblock %}
-{% block page_description %}{{ case.cover.client_name }} · {{ case.cover.policy_number }} · {{ case.cover.insurer }}{% endblock %}
+{% block page_description %}{{ case.cover.client_name }} · {{ case.cover.number }} · {{ case.cover.insurer }}{% endblock %}
 {% block content %}
 
 <div class="page-header">
   <div class="page-header__title">
     <a class="small" href="{% url 'cancellations:case_list' %}">{% icon "arrow-left" 14 %} All cases</a>
     <h2 style="margin-top:4px"><span class="ref" style="font-size:19px">{{ case.reference }}</span> {% include "components/status_badge.html" %}</h2>
-    <p>{{ case.cover.client_name }} · Policy {{ case.cover.policy_number }} · {{ case.cover.insurer }}</p>
+    <p>{{ case.cover.client_name }} · {{ case.cover.number_label }} · {{ case.cover.insurer }}</p>
   </div>
   <div class="btn-row">
     {% if case.status == "DRAFT" %}
@@ -252,10 +252,10 @@
       <div class="card__body">
         <dl class="kv kv--compact">
           <dt>Client</dt><dd>{{ case.cover.client_name }}</dd>
-          <dt>Policy no.</dt><dd>{{ case.cover.policy_number }}</dd>
+          <dt>Certificate no.</dt><dd>{{ case.cover.certificate_number|default:"—" }}</dd>
+          {% if case.cover.policy_number %}<dt>Policy no.</dt><dd>{{ case.cover.policy_number }}</dd>{% endif %}
           <dt>Insurer</dt><dd>{{ case.cover.insurer }}<br><span class="muted small">{{ case.cover.insurer.cancellation_email }}</span></dd>
           <dt>Vehicle / asset</dt><dd>{{ case.cover.asset_reference|default:"—" }}</dd>
-          {% if case.cover.certificate_number %}<dt>Certificate no.</dt><dd>{{ case.cover.certificate_number }}</dd>{% endif %}
           {% if case.cover.portal_ref %}<dt>Portal record</dt><dd>{{ case.cover.portal_ref }}</dd>{% endif %}
           <dt>Premium</dt><dd>{% if case.cover.premium is not None %}{{ case.cover.premium|floatformat:"2g" }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
           <dt>Cover period</dt><dd>{% if case.cover.has_cover_period %}{{ case.cover.start_date|date:"d M Y" }} – {{ case.cover.end_date|date:"d M Y" }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>

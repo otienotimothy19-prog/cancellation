@@ -2,7 +2,7 @@
 {% load ui %}
 {% block title %}{% if creating %}New cancellation{% else %}Edit {{ case.reference }}{% endif %} · IMOTH Cancellations{% endblock %}
 {% block header_title %}{% if creating %}New Cancellation{% else %}Edit draft {{ case.reference }}{% endif %}{% endblock %}
-{% block page_description %}{% if creating %}Create a cancellation request and send it to the insurer{% else %}{{ case.cover.client_name }} · {{ case.cover.policy_number }}{% endif %}{% endblock %}
+{% block page_description %}{% if creating %}Create a cancellation request and send it to the insurer{% else %}{{ case.cover.client_name }} · {{ case.cover.number }}{% endif %}{% endblock %}
 {% block content %}
 <form method="post" enctype="multipart/form-data" id="case-form" novalidate>{% csrf_token %}
   <p class="help" style="margin:0 0 14px"><span class="req">*</span> Required to send. You can save an incomplete request as a draft.</p>
@@ -27,7 +27,7 @@
           <input type="search" id="portal-q" placeholder="e.g. KDA 123A" autocomplete="off" maxlength="100">
           <button type="button" class="btn btn-secondary" id="portal-go">{% icon "search" 16 %}<span data-label>Search</span></button>
         </div>
-        <div class="help" id="portal-status" aria-live="polite">Fills in the policy, client, vehicle, certificate number, insurer and cover dates. Read-only: nothing changes in the portal.</div>
+        <div class="help" id="portal-status" aria-live="polite">Fills in the certificate number, client, vehicle, insurer and cover dates. Read-only: nothing changes in the portal.</div>
         <ul class="portal-results" id="portal-results" hidden></ul>
       </div>
       {% endif %}
@@ -35,11 +35,10 @@
       <div id="new-cover">
         <div class="or-divider">or enter a new cover</div>
         <div class="form-grid form-grid--3">
-          {% include "components/field.html" with field=cover_form.policy_number required=True %}
+          {% include "components/field.html" with field=cover_form.certificate_number required=True %}
           {% include "components/field.html" with field=cover_form.insurer required=True %}
           {% include "components/field.html" with field=cover_form.asset_reference %}
-          {% include "components/field.html" with field=cover_form.certificate_number %}
-          {{ cover_form.portal_ref }}
+          {{ cover_form.policy_number }}{{ cover_form.portal_ref }}
         </div>
         <details class="reveal" style="margin-top:16px"{% if cover_form.premium.value or cover_form.start_date.value or cover_form.end_date.value %} open{% endif %}>
           <summary>{% icon "chevron-right" 14 %}Optional: premium &amp; cover dates (to calculate the refund)</summary>
@@ -105,7 +104,7 @@
       </div>
       <dl class="summary" id="summary" style="margin-top:20px">
         <div><dt>Client</dt><dd data-sum="client"></dd></div>
-        <div><dt>Policy</dt><dd data-sum="policy"></dd></div>
+        <div><dt>Certificate</dt><dd data-sum="policy"></dd></div>
         <div><dt>Insurer</dt><dd data-sum="insurer"></dd></div>
         <div><dt>Reason</dt><dd data-sum="reason"></dd></div>
         <div><dt>Effective date</dt><dd data-sum="effective"></dd></div>
@@ -222,7 +221,7 @@
       }
       const notes = ["Filled in from portal record " + item.ref + "."];
       if (!item.insurer_id) notes.push(`Insurer “${item.insurer_name || "unknown"}” isn't set up here: choose it, or add it under Insurers first.`);
-      if (!item.policy_number) notes.push("The record has no policy number: enter it.");
+      if (!item.certificate_number) notes.push("The record has no certificate number: enter it.");
       status.textContent = notes.join(" ");
       q("case-reason_code").focus();
     }
@@ -296,7 +295,7 @@
       setSum("insurer", (t.match(/\(([^)]*)\)\s*$/) || [])[1]);
     } else {
       setSum("client", q("cover-client_name").value.trim());
-      setSum("policy", q("cover-policy_number").value.trim());
+      setSum("policy", q("cover-certificate_number").value.trim());
       setSum("insurer", selectedText(q("cover-insurer")));
     }
     setSum("reason", selectedText(reason));
@@ -308,7 +307,7 @@
     // Checklist of what sending needs (the server re-checks everything).
     const m = meta[reason.value] || {fields: [], documents: []};
     const items = [
-      ["Cover selected or entered", existing && existing.value ? true : ["cover-client_name", "cover-policy_number"].every(n => q(n).value.trim()) && !!q("cover-insurer").value],
+      ["Cover selected or entered", existing && existing.value ? true : ["cover-client_name", "cover-certificate_number"].every(n => q(n).value.trim()) && !!q("cover-insurer").value],
       ["Cancellation reason", !!reason.value],
       ["Effective date", !!q("case-effective_date").value],
       ...m.fields.map(f => [f.replaceAll("_", " ").replace(/^./, c => c.toUpperCase()), !!q("case-" + f).value.trim()]),

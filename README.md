@@ -29,7 +29,7 @@ DRAFT ──send──▶ SENT ──staff review──▶ CONFIRMED | REJECTED 
 SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (cleared by a reply)
 ```
 
-1. **Create.** You pick an existing cover or enter a new one (client, policy number, insurer, vehicle/asset, premium, dates). You also choose a reason code, set the effective date (it must fall inside the cover period) and attach the supporting document. A cover can have only one open case.
+1. **Create.** You pick an existing cover, look it up in the Production Portal, or enter a new one (client, **certificate number** (required), insurer, vehicle/asset; optional premium and dates). The policy number is optional and comes from the portal when available. You also choose a reason code, set the effective date (it must fall inside the cover period) and attach the supporting document. A cover can have only one open case.
    - **Save & send** (the usual path) first shows the exact email: To, Cc, subject and body. If anything required is missing, it lists that instead. One click on **Send now** saves and sends.
    - **Save draft** keeps it as **DRAFT** to finish later. If sending turns out to be blocked, the case is saved as a draft with the reasons shown.
 2. **Send.** The app renders the insurer's own template, or the default one. It sends from `cancellation@imoth.co.ke` to the insurer's cancellation address, with the insurer's CC list copied in and **all** the case's client and staff documents attached. Each email carries:
@@ -42,7 +42,7 @@ SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (clea
    1. the plus address `cancellation+CXL000123@…` in To, Cc or Delivered-To
    2. the reference `IMOTH-CXL-000123` in the subject
    3. `In-Reply-To` or `References` pointing at a Message-ID we sent
-   4. the policy number in the body, but only when exactly **one** open (SENT/QUERY) case has that number
+   4. the certificate number or policy number in the body, but only when exactly **one** open (SENT/QUERY) case has that number
 
    The app never guesses. Anything unmatched or ambiguous goes to the **Unmatched inbox**, where you link it to a case by hand or dismiss it. Every email and attachment is stored on the case.
 4. **Confirm.** You review each reply and mark it Confirmed, Rejected, Query or Information only. **Nothing is ever confirmed automatically.**
@@ -62,7 +62,7 @@ SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (clea
 7. **Dashboard** (the home page) shows:
    - counts of open, stale, unmatched and confirmed-this-month cases, plus the month's refund total
    - work lists: replies to review (each with a **Review** button that jumps straight to that reply's decision form), stale cases, missing certificates and drafts
-   - a search box for a policy number or an `IMOTH-CXL-…` reference; a single hit opens the case directly
+   - a search box for a certificate number, policy number or an `IMOTH-CXL-…` reference; a single hit opens the case directly
 
 ### Refund calculation
 
@@ -128,7 +128,7 @@ Inbound attachments go through the same checks. One that fails is not stored, an
 
 When `PRODUCTION_PORTAL_URL` and `PRODUCTION_PORTAL_TOKEN` are set, New Cancellation shows a
 **Find the certificate in the Production Portal** search (by vehicle registration, policy number,
-certificate number or client name). Picking a record fills in the policy number, client, vehicle,
+certificate number or client name). Picking a record fills in the certificate number, policy number (kept, not shown), client, vehicle,
 certificate number, insurer (matched by name to an active insurer here) and cover dates, and keeps the
 portal record reference on the cover. If the policy is already on file here, the existing cover is selected.
 

@@ -8,7 +8,7 @@
 <form method="get" class="search-hero" role="search">
   <label class="sr-only" for="dash-q">Search by policy number or reference</label>
   <div class="input-icon">{% icon "search" %}
-    <input id="dash-q" type="search" name="q" placeholder="Search policy number, IMOTH-CXL reference or client name…" autocomplete="off">
+    <input id="dash-q" type="search" name="q" placeholder="Search certificate number, IMOTH-CXL reference or client name…" autocomplete="off">
   </div>
   <button class="btn btn-primary">Search</button>
   <a class="btn btn-secondary" href="{% url 'cancellations:case_create' %}">{% icon "plus" %}<span>New cancellation</span></a>
@@ -36,7 +36,7 @@
         {% for e in to_review %}
         <li><a class="list-item" href="{{ e.case.get_absolute_url }}#email-{{ e.pk }}">
           <div class="grow">
-            <div class="title"><span class="ref">{{ e.case.reference }}</span><span class="muted small">{{ e.case.cover.policy_number }}</span></div>
+            <div class="title"><span class="ref">{{ e.case.reference }}</span><span class="muted small">{{ e.case.cover.number }}</span></div>
             <div class="sub">{{ e.received_at|date:"d M H:i" }} · {{ e.subject|default:"(no subject)" }}</div>
           </div>
           <span class="btn btn-primary btn-sm">Review</span>
@@ -81,7 +81,7 @@
         {% for c in missing_certificates %}
         <li><a class="list-item" href="{{ c.get_absolute_url }}">
           <div class="grow">
-            <div class="title"><span class="ref">{{ c.reference }}</span><span class="muted small">{{ c.cover.policy_number }}</span></div>
+            <div class="title"><span class="ref">{{ c.reference }}</span><span class="muted small">{{ c.cover.number }}</span></div>
             <div class="sub">{{ c.cover.insurer }} · confirmed {{ c.confirmed_at|date:"d M Y" }}</div>
           </div>
           <span class="btn btn-secondary btn-sm">{% icon "upload" 15 %}Upload</span>
@@ -104,7 +104,7 @@
         <li><a class="list-item" href="{{ c.get_absolute_url }}">
           <div class="grow">
             <div class="title"><span class="ref">{{ c.reference }}</span><span class="muted small">{{ c.cover.client_name }}</span></div>
-            <div class="sub">{{ c.cover.policy_number }} · created {{ c.created_at|date:"d M Y" }}</div>
+            <div class="sub">{{ c.cover.number }} · created {{ c.created_at|date:"d M Y" }}</div>
           </div>
           {% icon "chevron-right" 18 class="chev" %}
         </a></li>
@@ -125,13 +125,13 @@
   {% if recent_confirmed %}
   <div class="table-wrap">
     <table class="table table--stack">
-      <thead><tr><th>Reference</th><th>Client</th><th>Policy</th><th>Insurer</th><th>Effective date</th><th class="num">Refund ({{ currency }})</th></tr></thead>
+      <thead><tr><th>Reference</th><th>Client</th><th>Certificate</th><th>Insurer</th><th>Effective date</th><th class="num">Refund ({{ currency }})</th></tr></thead>
       <tbody>
       {% for c in recent_confirmed %}
         <tr data-href="{{ c.get_absolute_url }}">
           <td data-label="Reference"><a class="ref" href="{{ c.get_absolute_url }}">{{ c.reference }}</a></td>
           <td data-label="Client" class="cell-main">{{ c.cover.client_name }}</td>
-          <td data-label="Policy">{{ c.cover.policy_number }}</td>
+          <td data-label="Certificate">{{ c.cover.number }}</td>
           <td data-label="Insurer">{{ c.cover.insurer }}</td>
           <td data-label="Effective date" class="nowrap">{{ c.confirmed_effective_date|date:"d M Y" }}</td>
           <td data-label="Refund" class="num cell-main">{% if c.refund_amount is not None %}{{ c.refund_amount|floatformat:"2g" }}{% else %}<span class="muted">—</span>{% endif %}</td>

@@ -54,7 +54,7 @@ def template_context(case):
     return {
         "reference": case.reference,
         "client_name": cover.client_name,
-        "policy_number": cover.policy_number,
+        "policy_number": cover.policy_number or "-",
         "asset_reference": cover.asset_reference or "-",
         "certificate_number": cover.certificate_number or "-",
         "premium": cover.premium if cover.premium is not None else "-",
@@ -78,7 +78,7 @@ def render_email(case, reference=None):
     context = template_context(case)
     if reference:
         context["reference"] = reference
-    subject = f"Cancellation request {context['reference']} – Policy {cover.policy_number} – {cover.client_name}"
+    subject = f"Cancellation request {context['reference']} – {cover.number_label} – {cover.client_name}"
     template = Template("{% autoescape off %}" + cover.insurer.template_text() + "{% endautoescape %}")
     return subject, template.render(Context(context))
 
@@ -164,13 +164,13 @@ def follow_up_defaults(case):
     cover = case.cover
     query = query_email(case)
     subject = (query.subject if query and case.reference.lower() in query.subject.lower()
-               else f"Cancellation request {case.reference} – Policy {cover.policy_number} – {cover.client_name}")
+               else f"Cancellation request {case.reference} – {cover.number_label} – {cover.client_name}")
     if not subject.lower().startswith("re:"):
         subject = f"Re: {subject}"
     body = (
         f"Dear {cover.insurer.name} Cancellations Team,\n\n"
         f"Further to your query on our cancellation request {case.reference} "
-        f"(policy {cover.policy_number}, {cover.client_name}):\n\n\n\n"
+        f"({cover.number_label.lower()}, {cover.client_name}):\n\n\n\n"
         f"Please reply keeping the reference {case.reference} in the subject.\n\n"
         "Kind regards,\nIMOTH Cancellations\n"
     )

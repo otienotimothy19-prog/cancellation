@@ -63,13 +63,14 @@ def _to_review_qs():
 
 
 def search_cases(q):
-    """Policy number, reference (IMOTH-CXL-000123 / 123) or client name."""
+    """Certificate or policy number, reference (IMOTH-CXL-000123 / 123) or client name."""
     cases = CancellationCase.objects.select_related("cover__insurer")
     q = (q or "").strip()
     if not q:
         return cases
     pk = CancellationCase.pk_from_reference(q.upper())
-    filt = Q(cover__policy_number__icontains=q) | Q(cover__client_name__icontains=q)
+    filt = (Q(cover__certificate_number__icontains=q) | Q(cover__policy_number__icontains=q)
+            | Q(cover__client_name__icontains=q))
     if pk:
         filt |= Q(pk=pk)
     elif q.isdigit():
@@ -157,7 +158,7 @@ def _bind_create_forms(request):
     forms_["case_form"] = case_form = CaseForm(request.POST, prefix="case", cover=cover)
     if existing and existing.cases.filter(status__in=BLOCKING_STATUSES).exists():
         open_case = existing.cases.filter(status__in=BLOCKING_STATUSES).first()
-        return forms_, cover, f"{existing.policy_number} already has an open case {open_case.reference}."
+        return forms_, cover, f"{existing.number_label} already has an open case {open_case.reference}."
     if not (case_form.is_valid() and doc_form.is_valid()):
         return forms_, cover, None
     return forms_, cover, ""  # "" = valid, no error
@@ -177,7 +178,7 @@ def case_create(request):
             case.created_by = request.user
             case.save()
             log_event(case, "CREATED", request.user, "", S.DRAFT,
-                      f"Draft created for {cover.policy_number} ({cover.insurer})")
+                      f"Draft created for {cover.number_label} ({cover.insurer})")
             if doc_form.cleaned_data.get("file"):
                 doc = save_uploaded_document(case, doc_form.cleaned_data["file"], doc_form.cleaned_data["doc_type"],
                                              doc_form.cleaned_data["source"], request.user)

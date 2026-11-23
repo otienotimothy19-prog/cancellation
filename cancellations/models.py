@@ -24,9 +24,9 @@ Please cancel the following cover:
 
 Reference:       {{ reference }}
 Client name:     {{ client_name }}
+Certificate no.: {{ certificate_number }}
 Policy number:   {{ policy_number }}
 Vehicle/asset:   {{ asset_reference }}
-Certificate no.: {{ certificate_number }}
 Reason:          {{ reason }}{% if reason_note %}
 Notes:           {{ reason_note }}{% endif %}
 Effective date:  {{ effective_date }}{% if effective_time %} at {{ effective_time }}{% endif %}
@@ -93,7 +93,7 @@ class Cover(models.Model):
         CANCELLED = "CANCELLED", "Cancelled"
 
     client_name = models.CharField(max_length=200)
-    policy_number = models.CharField(max_length=100)
+    policy_number = models.CharField(max_length=100, blank=True)  # optional: the certificate number identifies the cover
     insurer = models.ForeignKey(Insurer, on_delete=models.PROTECT, related_name="covers")
     asset_reference = models.CharField("vehicle / asset reference", max_length=200, blank=True)
     certificate_number = models.CharField(max_length=100, blank=True)
@@ -111,11 +111,23 @@ class Cover(models.Model):
     class Meta:
         ordering = ["client_name", "policy_number"]
         constraints = [
-            models.UniqueConstraint(fields=["insurer", "policy_number"], name="unique_policy_per_insurer"),
+            models.UniqueConstraint(fields=["insurer", "policy_number"], condition=~models.Q(policy_number=""),
+                                    name="unique_policy_per_insurer"),
+            models.UniqueConstraint(fields=["insurer", "certificate_number"], condition=~models.Q(certificate_number=""),
+                                    name="unique_certificate_per_insurer"),
         ]
 
     def __str__(self):
-        return f"{self.policy_number} – {self.client_name} ({self.insurer})"
+        return f"{self.number} – {self.client_name} ({self.insurer})"
+
+    @property
+    def number(self):
+        """How staff and insurers identify the cover: the certificate number (policy number for older covers)."""
+        return self.certificate_number or self.policy_number
+
+    @property
+    def number_label(self):
+        return f"Certificate {self.certificate_number}" if self.certificate_number else f"Policy {self.policy_number}"
 
     @property
     def has_cover_period(self):

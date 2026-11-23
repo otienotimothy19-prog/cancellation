@@ -140,7 +140,7 @@ def _confirm(case, email, actor, note, effective_date, certificate_doc, certific
         cover.status = cover.Status.CANCELLED
         cover.save(update_fields=["status"])
         log_event(case, "COVER_CANCELLED", actor, locked.status, locked.status,
-                  f"Cover {cover.policy_number} marked CANCELLED effective {effective_date:%d %b %Y}")
+                  f"Cover {cover.number} marked CANCELLED effective {effective_date:%d %b %Y}")
 
     if certificate_doc is not None:
         certificate_doc.type = DocType.CERTIFICATE

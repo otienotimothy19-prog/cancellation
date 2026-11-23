@@ -147,15 +147,16 @@ def match_by_policy_number(msg):
     candidates = CancellationCase.objects.filter(status__in=OPEN_STATUSES).select_related("cover__insurer")
     hits = {}
     for case in candidates:
-        pn = case.cover.policy_number.strip()
-        if pn and re.search(rf"(?<![A-Za-z0-9]){re.escape(pn)}(?![A-Za-z0-9])", body, re.IGNORECASE):
-            hits[case.pk] = case
+        for kind, number in (("Certificate number", case.cover.certificate_number), ("Policy number", case.cover.policy_number)):
+            number = (number or "").strip()
+            if number and re.search(rf"(?<![A-Za-z0-9]){re.escape(number)}(?![A-Za-z0-9])", body, re.IGNORECASE):
+                hits.setdefault(case.pk, (case, f"{kind} {number}"))
     if len(hits) == 1:
-        case = next(iter(hits.values()))
-        return case, f"Policy number {case.cover.policy_number} in body (only open case with that number)"
+        case, found = next(iter(hits.values()))
+        return case, f"{found} in body (only open case with that number)"
     if len(hits) > 1:
-        refs = ", ".join(c.reference for c in hits.values())
-        return None, f"Body mentions policy numbers of several open cases ({refs}); not guessing"
+        refs = ", ".join(c.reference for c, _ in hits.values())
+        return None, f"Body mentions certificate/policy numbers of several open cases ({refs}); not guessing"
     return None, ""
 
 

@@ -20,7 +20,7 @@
   <form method="get" class="filter-bar" role="search">
     <div class="field">
       <label for="id_q">Search</label>
-      <div class="input-icon">{% icon "search" %}<input type="search" name="q" id="id_q" value="{{ form.q.value|default:'' }}" placeholder="Policy number, reference or client"></div>
+      <div class="input-icon">{% icon "search" %}<input type="search" name="q" id="id_q" value="{{ form.q.value|default:'' }}" placeholder="Certificate number, reference or client"></div>
     </div>
     <div class="field"><label for="id_status">Status</label>{{ form.status }}</div>
     <div class="field"><label for="id_view">Show</label>{{ form.view }}</div>
@@ -34,14 +34,14 @@
   <div class="table-wrap" style="border-top:1px solid var(--border)">
     <table class="table table--stack">
       <thead>
-        <tr><th>Reference</th><th>Client</th><th>Policy</th><th>Insurer</th><th>Cancellation date</th><th>Status</th><th>Last updated</th><th><span class="sr-only">Actions</span></th></tr>
+        <tr><th>Reference</th><th>Client</th><th>Certificate</th><th>Insurer</th><th>Cancellation date</th><th>Status</th><th>Last updated</th><th><span class="sr-only">Actions</span></th></tr>
       </thead>
       <tbody>
       {% for c in cases %}
         <tr data-href="{{ c.get_absolute_url }}">
           <td data-label="Reference"><a class="ref" href="{{ c.get_absolute_url }}">{{ c.reference }}</a></td>
           <td data-label="Client"><div><div class="cell-main">{{ c.cover.client_name }}</div><div class="cell-sub">{{ c.reason_label|default:"No reason yet" }}</div></div></td>
-          <td data-label="Policy" class="nowrap">{{ c.cover.policy_number }}</td>
+          <td data-label="Certificate" class="nowrap">{{ c.cover.number }}</td>
           <td data-label="Insurer">{{ c.cover.insurer }}</td>
           <td data-label="Cancellation date" class="nowrap"><span>
             {% if c.confirmed_effective_date %}{{ c.confirmed_effective_date|date:"d M Y" }} <span class="cell-sub">confirmed</span>

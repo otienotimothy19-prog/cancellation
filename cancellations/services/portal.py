@@ -16,6 +16,7 @@ import urllib.request
 from datetime import date
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 from ..models import Cover, Insurer
@@ -123,9 +124,13 @@ def search(by, term, staff_email):
             continue
         insurer = match_insurer(item.get("insurer"), insurers)
         policy = (item.get("policyNumber") or "").strip()
+        cert = (item.get("certificateNumber") or "").strip()
         existing = None
-        if insurer and policy:
-            existing = Cover.objects.filter(insurer=insurer, policy_number__iexact=policy).first()
+        if insurer and (cert or policy):
+            match = Q(certificate_number__iexact=cert) if cert else Q(pk__in=[])
+            if policy:
+                match |= Q(policy_number__iexact=policy)
+            existing = Cover.objects.filter(match, insurer=insurer).first()
         results.append({
             "ref": str(item.get("ref") or "")[:40],
             "client_name": (item.get("insuredName") or "")[:200],

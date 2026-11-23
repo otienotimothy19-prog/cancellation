@@ -17,7 +17,7 @@ from .permissions import cancellations_role_required, has_cancellations_role
 logger = logging.getLogger(__name__)
 
 FIELDS = [
-    "reference", "case_id", "status", "policy_number", "client_name", "insurer", "asset_reference",
+    "reference", "case_id", "status", "certificate_number", "policy_number", "client_name", "insurer", "asset_reference",
     "premium", "cover_start_date", "cover_end_date", "requested_effective_date", "requested_effective_time", "effective_date",
     "refund_amount", "currency", "reason_code", "confirmed_at",
 ]
@@ -67,6 +67,7 @@ def row(case):
         "reference": case.reference,
         "case_id": case.pk,
         "status": case.status,
+        "certificate_number": cover.certificate_number,
         "policy_number": cover.policy_number,
         "client_name": cover.client_name,
         "insurer": cover.insurer.name,

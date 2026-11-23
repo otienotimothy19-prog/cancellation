@@ -41,7 +41,7 @@ class CreateAndSendFlowTests(TestCase):
 
     def post_create(self, **overrides):
         data = {
-            "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
+            "cover-client_name": "Peter Otieno", "cover-certificate_number": "CMTR-777", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
             "cover-asset_reference": "KCB 777Z", "cover-premium": "48000", "cover-start_date": "2026-01-01",
             "cover-end_date": "2026-12-31", "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
             "doc-doc_type": "SIGNED_REQUEST", "doc-source": "client", "doc-file": pdf_upload(),

@@ -59,6 +59,14 @@ class MatchingMethodsTests(TestCase):
     def test_4_policy_number_from_html_body(self):
         self.assertMatched(inbound(text="", html="<p>Policy <b>POL-2002</b> cancelled.</p>"), M.POLICY_NUMBER, self.other)
 
+    def test_4_certificate_number_in_body(self):
+        cover = self.case.cover
+        cover.certificate_number = "C35561500"
+        cover.save()
+        msg = inbound(text="Certificate C35561500 has been cancelled.")
+        self.assertMatched(msg, M.POLICY_NUMBER)
+        self.assertIn("Certificate number C35561500", match_case(msg).note)
+
     def test_policy_number_must_be_whole_token(self):
         self.assertIsNone(match_case(inbound(text="Ref POL-10012 is unrelated")).case)
 

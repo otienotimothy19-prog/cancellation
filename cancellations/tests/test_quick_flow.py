@@ -19,7 +19,7 @@ class SaveAndSendTests(TestCase):
 
     def data(self, **overrides):
         d = {
-            "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
+            "cover-client_name": "Peter Otieno", "cover-certificate_number": "CMTR-777", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
             "cover-asset_reference": "KCB 777Z", "cover-premium": "48000", "cover-start_date": "2026-01-01",
             "cover-end_date": "2026-12-31", "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
             "doc-doc_type": "SIGNED_REQUEST", "doc-source": "client",
@@ -118,7 +118,7 @@ class SimplifiedFormTests(TestCase):
 
     def test_upload_needs_only_file_and_type(self):
         self.client.post(reverse("cancellations:case_create"), {
-            "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-778", "cover-insurer": self.insurer.pk,
+            "cover-client_name": "Peter Otieno", "cover-certificate_number": "CMTR-778", "cover-policy_number": "MTR-778", "cover-insurer": self.insurer.pk,
             "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
             "doc-doc_type": "SIGNED_REQUEST", "doc-file": pdf_upload(), "action": "draft",
         })
@@ -140,7 +140,7 @@ class SimplifiedFormTests(TestCase):
         self.assertIsNotNone(r.context["case_form"]["effective_time"].value())
         self.assertContains(r, 'type="time"')
         self.client.post(reverse("cancellations:case_create"), {
-            "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-779", "cover-insurer": self.insurer.pk,
+            "cover-client_name": "Peter Otieno", "cover-certificate_number": "CMTR-779", "cover-policy_number": "MTR-779", "cover-insurer": self.insurer.pk,
             "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01", "case-effective_time": "14:30",
             "doc-doc_type": "SIGNED_REQUEST", "doc-file": pdf_upload(), "action": "draft",
         })
@@ -148,3 +148,48 @@ class SimplifiedFormTests(TestCase):
         self.assertEqual(case.effective_time, dt.time(14, 30))
         self.assertIn("Effective date:  01 July 2026 at 14:30", render_email(case)[1])
         self.assertContains(self.client.get(case.get_absolute_url()), "01 Jul 2026 at 14:30")
+
+
+class CertificateFirstTests(TestCase):
+    def setUp(self):
+        self.user = make_user()
+        self.client.force_login(self.user)
+        self.insurer = make_insurer()
+
+    def post(self, **extra):
+        data = {
+            "cover-client_name": "Kipchumba Carlos", "cover-insurer": self.insurer.pk,
+            "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
+            "doc-doc_type": "SIGNED_REQUEST", "doc-file": pdf_upload(), "action": "draft", **extra,
+        }
+        return self.client.post(reverse("cancellations:case_create"), data)
+
+    def test_certificate_required_policy_optional(self):
+        r = self.post()
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("certificate_number", r.context["cover_form"].errors)
+        self.assertNotIn("policy_number", r.context["cover_form"].errors)
+        self.assertEqual(self.post(**{"cover-certificate_number": "C35561500"}).status_code, 302)
+        case = CancellationCase.objects.get()
+        self.assertEqual((case.cover.certificate_number, case.cover.policy_number), ("C35561500", ""))
+        self.assertIn("Certificate C35561500", case.events.get(action="CREATED").note)
+        from cancellations.services.sending import render_email
+        subject, body = render_email(case)
+        self.assertIn("Certificate C35561500", subject)
+        self.assertIn("Policy number:   -", body)
+
+    def test_policy_input_is_hidden(self):
+        r = self.client.get(reverse("cancellations:case_create"))
+        self.assertContains(r, '<input type="hidden" name="cover-policy_number"', html=False)
+
+    def test_duplicate_certificate_rejected_and_blank_policies_allowed(self):
+        self.assertEqual(self.post(**{"cover-certificate_number": "C1"}).status_code, 302)
+        self.assertEqual(self.post(**{"cover-certificate_number": "C2"}).status_code, 302)  # two covers, both without a policy number
+        r = self.post(**{"cover-certificate_number": "c1"})
+        self.assertIn("already exists", r.context["cover_form"].errors["certificate_number"][0])
+
+    def test_search_by_certificate_number(self):
+        self.post(**{"cover-certificate_number": "C35561500"})
+        case = CancellationCase.objects.get()
+        r = self.client.get(reverse("cancellations:dashboard"), {"q": "C35561500"})
+        self.assertRedirects(r, case.get_absolute_url())

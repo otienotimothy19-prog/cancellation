@@ -18,7 +18,7 @@ class CoverChoiceForm(forms.Form):
         required=False, empty_label="— enter a new cover below —",
     )
     client_name = forms.CharField(max_length=200, required=False)
-    policy_number = forms.CharField(max_length=100, required=False)
+    policy_number = forms.CharField(max_length=100, required=False, widget=forms.HiddenInput)  # filled from the portal
     insurer = forms.ModelChoiceField(queryset=Insurer.objects.filter(active=True), required=False)
     asset_reference = forms.CharField(label="Vehicle / asset reference", max_length=200, required=False)
     premium = forms.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False)
@@ -27,7 +27,7 @@ class CoverChoiceForm(forms.Form):
     certificate_number = forms.CharField(max_length=100, required=False)
     portal_ref = forms.CharField(max_length=40, required=False, widget=forms.HiddenInput)
 
-    NEW_FIELDS = ["client_name", "policy_number", "insurer"]
+    NEW_FIELDS = ["client_name", "certificate_number", "insurer"]
 
     def clean(self):
         data = super().clean()
@@ -47,8 +47,12 @@ class CoverChoiceForm(forms.Form):
             return data
         if data.get("start_date") and data.get("end_date") and data["end_date"] <= data["start_date"]:
             self.add_error("end_date", "End date must be after the start date.")
-        if Cover.objects.filter(insurer=data["insurer"], policy_number__iexact=data["policy_number"].strip()).exists():
-            self.add_error("policy_number", "This policy already exists for that insurer — select it above instead.")
+        cert = data["certificate_number"].strip()
+        policy = (data.get("policy_number") or "").strip()
+        if Cover.objects.filter(insurer=data["insurer"], certificate_number__iexact=cert).exists():
+            self.add_error("certificate_number", "This certificate already exists for that insurer — select it above instead.")
+        elif policy and Cover.objects.filter(insurer=data["insurer"], policy_number__iexact=policy).exists():
+            self.add_error("certificate_number", f"Policy {policy} already exists for that insurer — select it above instead.")
         return data
 
     def get_or_create_cover(self):
@@ -56,7 +60,7 @@ class CoverChoiceForm(forms.Form):
         if data.get("existing_cover"):
             return data["existing_cover"]
         return Cover.objects.create(
-            client_name=data["client_name"].strip(), policy_number=data["policy_number"].strip(),
+            client_name=data["client_name"].strip(), policy_number=(data.get("policy_number") or "").strip(),
             insurer=data["insurer"], asset_reference=data["asset_reference"].strip(), premium=data["premium"],
             start_date=data["start_date"], end_date=data["end_date"],
             certificate_number=(data.get("certificate_number") or "").strip(), portal_ref=data.get("portal_ref") or "",
@@ -196,7 +200,7 @@ class LinkEmailForm(forms.Form):
         self.fields["case"].queryset = self.fields["case"].queryset.order_by("-pk")
         self.fields["case"].widget.attrs.update({"size": 8, "class": "case-select"})
         self.fields["case"].label_from_instance = lambda c: (
-            f"{c.reference} · {c.cover.policy_number} · {c.cover.client_name} ({c.get_status_display()})"
+            f"{c.reference} · {c.cover.number} · {c.cover.client_name} ({c.get_status_display()})"
         )
 
 

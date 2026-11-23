@@ -92,7 +92,7 @@ def _send_reminder(to, cases, now, result):
             sent = timezone.localtime(c.last_sent_at)
             url = settings.APP_BASE_URL.rstrip("/") + reverse("cancellations:case_detail", args=[c.pk]) if settings.APP_BASE_URL else ""
             lines.append(
-                f"- {c.reference}  {c.cover.client_name}, policy {c.cover.policy_number}, {c.cover.insurer}\n"
+                f"- {c.reference}  {c.cover.client_name}, {c.cover.number_label.lower()}, {c.cover.insurer}\n"
                 f"  sent {sent:%d %b %Y %H:%M}, SLA {c.cover.insurer.sla_hours} h, insurer: {c.cover.insurer.cancellation_email}"
                 + (f"\n  {url}" if url else "")
             )
