@@ -26,6 +26,7 @@ Reference:       {{ reference }}
 Client name:     {{ client_name }}
 Policy number:   {{ policy_number }}
 Vehicle/asset:   {{ asset_reference }}
+Certificate no.: {{ certificate_number }}
 Reason:          {{ reason }}{% if reason_note %}
 Notes:           {{ reason_note }}{% endif %}
 Effective date:  {{ effective_date }}
@@ -55,8 +56,8 @@ class Insurer(models.Model):
         blank=True,
         help_text=(
             "Django template for the email body. Variables: reference, client_name, policy_number, "
-            "asset_reference, reason, reason_code, reason_note, effective_date, insurer_name, premium, "
-            "start_date, end_date. Leave blank to use the default template."
+            "asset_reference, certificate_number, reason, reason_code, reason_note, effective_date, insurer_name, "
+            "premium, start_date, end_date. Leave blank to use the default template."
         ),
     )
     sla_hours = models.PositiveIntegerField(default=72)
@@ -95,6 +96,11 @@ class Cover(models.Model):
     policy_number = models.CharField(max_length=100)
     insurer = models.ForeignKey(Insurer, on_delete=models.PROTECT, related_name="covers")
     asset_reference = models.CharField("vehicle / asset reference", max_length=200, blank=True)
+    certificate_number = models.CharField(max_length=100, blank=True)
+    portal_ref = models.CharField(
+        "Production Portal reference", max_length=40, blank=True,
+        help_text="The certificate record this cover was looked up from, if any.",
+    )
     # Optional: only used to calculate the pro-rata refund, which needs all three.
     premium = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     start_date = models.DateField(null=True, blank=True)

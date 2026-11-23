@@ -233,3 +233,10 @@ SLA_ALERT_EMAIL = env("SLA_ALERT_EMAIL", "")
 SLA_STALE_AFTER_REMINDER_HOURS = int(env("SLA_STALE_AFTER_REMINDER_HOURS", "24"))
 SLA_CHECK_INTERVAL = int(env("SLA_CHECK_INTERVAL", "300"))  # seconds, in the worker loop
 APP_BASE_URL = env("APP_BASE_URL", "")  # e.g. https://cancellations.imoth.co.ke (links in reminder emails)
+
+# --- Production Portal (certificate records) -------------------------------
+# Read-only lookup of issued certificates via the portal's Bearer-token API
+# (/api/underwriting/v1). Both unset = the "Find in Production Portal" search is hidden.
+PRODUCTION_PORTAL_URL = (env("PRODUCTION_PORTAL_URL", "") or "").rstrip("/")  # e.g. https://imoth-portal-xxxxx.ondigitalocean.app
+PRODUCTION_PORTAL_TOKEN = env("PRODUCTION_PORTAL_TOKEN", "")  # same value as the portal's UNDERWRITING_API_TOKEN
+PRODUCTION_PORTAL_TIMEOUT = int(env("PRODUCTION_PORTAL_TIMEOUT", "10"))

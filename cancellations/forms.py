@@ -24,9 +24,10 @@ class CoverChoiceForm(forms.Form):
     premium = forms.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False)
     start_date = forms.DateField(required=False, widget=DATE)
     end_date = forms.DateField(required=False, widget=DATE)
+    certificate_number = forms.CharField(max_length=100, required=False)
+    portal_ref = forms.CharField(max_length=40, required=False, widget=forms.HiddenInput)
 
     NEW_FIELDS = ["client_name", "policy_number", "insurer"]
-    REFUND_FIELDS = ["premium", "start_date", "end_date"]  # optional, but all three or none
 
     def clean(self):
         data = super().clean()
@@ -35,11 +36,13 @@ class CoverChoiceForm(forms.Form):
         for name in self.NEW_FIELDS:
             if data.get(name) in (None, ""):
                 self.add_error(name, "Required for a new cover.")
-        given = [n for n in self.REFUND_FIELDS if data.get(n) not in (None, "")]
-        if given and len(given) < len(self.REFUND_FIELDS):
-            for name in self.REFUND_FIELDS:
-                if name not in given:
-                    self.add_error(name, "Fill in premium and both cover dates to calculate the refund, or leave all three blank.")
+        # Optional cover period: both dates or neither. A premium needs the period (for the refund).
+        if bool(data.get("start_date")) != bool(data.get("end_date")):
+            missing = "end_date" if data.get("start_date") else "start_date"
+            self.add_error(missing, "Enter both cover dates, or leave both blank.")
+        elif data.get("premium") is not None and not data.get("start_date"):
+            self.add_error("start_date", "The refund needs the cover dates as well as the premium.")
+            self.add_error("end_date", "The refund needs the cover dates as well as the premium.")
         if self.errors:
             return data
         if data.get("start_date") and data.get("end_date") and data["end_date"] <= data["start_date"]:
@@ -56,6 +59,7 @@ class CoverChoiceForm(forms.Form):
             client_name=data["client_name"].strip(), policy_number=data["policy_number"].strip(),
             insurer=data["insurer"], asset_reference=data["asset_reference"].strip(), premium=data["premium"],
             start_date=data["start_date"], end_date=data["end_date"],
+            certificate_number=(data.get("certificate_number") or "").strip(), portal_ref=data.get("portal_ref") or "",
         )
 
 
@@ -204,7 +208,8 @@ class InsurerForm(forms.ModelForm):
     """Insurer settings used when sending requests and checking replies."""
 
     TEMPLATE_VARIABLES = (
-        "reference", "client_name", "policy_number", "asset_reference", "premium", "start_date", "end_date",
+        "reference", "client_name", "policy_number", "asset_reference", "certificate_number", "premium",
+        "start_date", "end_date",
         "reason", "reason_code", "reason_note", "effective_date", "insurer_name",
     )
 

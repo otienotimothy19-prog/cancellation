@@ -20,6 +20,7 @@ from .permissions import cancellations_role_required
 from .reasons import REASONS, DocType, doc_label
 from .services.documents import ALLOWED_TYPES, save_uploaded_document
 from .services.inbound import dismiss_email, link_email
+from .services import portal
 from .services.refunds import pro_rata_refund
 from .services.sending import (
     SendBlocked, content_blockers, follow_up_defaults, render_email, send_blockers, send_case, send_follow_up,
@@ -194,7 +195,18 @@ def case_create(request):
         return redirect(case)
     return render(request, "cancellations/case_form.html", {
         **forms_, "reason_meta": _reason_meta(), "creating": True, **_upload_limits(),
+        "portal_enabled": portal.enabled(), "portal_search_by": portal.SEARCH_BY,
     })
+
+
+@cancellations_role_required
+def portal_search(request):
+    """JSON: certificate records from the Production Portal for the New Cancellation form (read-only)."""
+    try:
+        items = portal.search(request.GET.get("by", ""), request.GET.get("q", ""), request.user.email)
+    except portal.PortalError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=200)
+    return JsonResponse({"ok": True, "items": items})
 
 
 @require_POST
@@ -234,7 +246,8 @@ def _unsaved_cover(cover_form):
     d = cover_form.cleaned_data
     return Cover(client_name=d.get("client_name") or "", policy_number=(d.get("policy_number") or "").strip(),
                  insurer=d.get("insurer"), asset_reference=d.get("asset_reference") or "", premium=d.get("premium"),
-                 start_date=d.get("start_date"), end_date=d.get("end_date"))
+                 start_date=d.get("start_date"), end_date=d.get("end_date"),
+                 certificate_number=(d.get("certificate_number") or "").strip())
 
 
 @cancellations_role_required

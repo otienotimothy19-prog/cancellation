@@ -124,6 +124,20 @@ A sender can't place a header above Zoho's, so lower copies are ignored. A pass 
 
 Inbound attachments go through the same checks. One that fails is not stored, and it is listed on the email as skipped. Files are kept in private object storage (Spaces) or in a local folder outside the web root. Nothing is ever served by URL: downloads go through an authenticated view.
 
+### Production Portal lookup
+
+When `PRODUCTION_PORTAL_URL` and `PRODUCTION_PORTAL_TOKEN` are set, New Cancellation shows a
+**Find the certificate in the Production Portal** search (by vehicle registration, policy number,
+certificate number or client name). Picking a record fills in the policy number, client, vehicle,
+certificate number, insurer (matched by name to an active insurer here) and cover dates, and keeps the
+portal record reference on the cover. If the policy is already on file here, the existing cover is selected.
+
+It uses the portal's existing read-only API (`GET /api/underwriting/v1/records`), so the portal itself
+needs no changes. Only the search endpoint is called; client phone and email are never fetched.
+The portal records every lookup in its audit log, with the staff member's email in `X-Imoth-Staff`.
+The portal returns no premium, so the refund is still calculated only when staff enter the premium.
+If the portal restricts callers with `UNDERWRITING_API_IPS`, this app's outbound IP must be added there.
+
 ### Reason codes
 
 | Code | Requires |
@@ -299,6 +313,8 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 | `SLA_STALE_AFTER_REMINDER_HOURS` | no | `24` | Hours between the reminder and the STALE flag (0 = immediately) |
 | `SLA_CHECK_INTERVAL` | no | `300` | Seconds between SLA checks in the worker |
 | `APP_BASE_URL` | no | – | e.g. `https://cancellations.imoth.co.ke`; adds case links to reminder emails |
+| `PRODUCTION_PORTAL_URL` | no | – | Production Portal base URL (no trailing slash). With the token, adds "Find in Production Portal" to New Cancellation |
+| `PRODUCTION_PORTAL_TOKEN` | no | – | **Secret.** The portal's `UNDERWRITING_API_TOKEN` (32–128 chars) |
 | `INBOUND_WEBHOOK_SECRET` | Postmark/Mailgun | – | `user:password` Basic auth on the inbound webhook |
 | `POSTMARK_SERVER_TOKEN` | Postmark | – | Server API token |
 | `MAILGUN_API_KEY` / `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun | – | API and webhook signing keys |

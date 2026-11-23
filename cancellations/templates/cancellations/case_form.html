@@ -17,6 +17,20 @@
       <div><h2 id="sec-a">Policy information</h2><p>Choose a cover already on file, or enter the policy being cancelled.</p></div>
     </div>
     <div class="form-section__body">
+      {% if portal_enabled %}
+      <div class="portal-search" id="portal-search" data-url="{% url 'cancellations:portal_search' %}">
+        <div class="portal-search__head">{% icon "search" 16 %}<strong>Find the certificate in the Production Portal</strong></div>
+        <div class="portal-search__row">
+          <label class="sr-only" for="portal-by">Search by</label>
+          <select id="portal-by">{% for key, label in portal_search_by.items %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+          <label class="sr-only" for="portal-q">Search term</label>
+          <input type="search" id="portal-q" placeholder="e.g. KDA 123A" autocomplete="off" maxlength="100">
+          <button type="button" class="btn btn-secondary" id="portal-go">{% icon "search" 16 %}<span data-label>Search</span></button>
+        </div>
+        <div class="help" id="portal-status" aria-live="polite">Fills in the policy, client, vehicle, certificate number, insurer and cover dates. Read-only: nothing changes in the portal.</div>
+        <ul class="portal-results" id="portal-results" hidden></ul>
+      </div>
+      {% endif %}
       {% include "components/field.html" with field=cover_form.existing_cover label="Use an existing cover" help="Only active covers are listed." %}
       <div id="new-cover">
         <div class="or-divider">or enter a new cover</div>
@@ -24,6 +38,8 @@
           {% include "components/field.html" with field=cover_form.policy_number required=True %}
           {% include "components/field.html" with field=cover_form.insurer required=True %}
           {% include "components/field.html" with field=cover_form.asset_reference %}
+          {% include "components/field.html" with field=cover_form.certificate_number %}
+          {{ cover_form.portal_ref }}
         </div>
         <details class="reveal" style="margin-top:16px"{% if cover_form.premium.value or cover_form.start_date.value or cover_form.end_date.value %} open{% endif %}>
           <summary>{% icon "chevron-right" 14 %}Optional: premium &amp; cover dates (to calculate the refund)</summary>
@@ -181,6 +197,89 @@
     $("client-existing").hidden = !using;
   }
   if (existing) { existing.addEventListener("change", updateCover); updateCover(); }
+
+  /* ---- Production Portal lookup (read-only): fills the new-cover fields from a certificate record ---- */
+  const portalBox = $("portal-search");
+  if (portalBox) {
+    const by = $("portal-by"), term = $("portal-q"), go = $("portal-go"), status = $("portal-status"), list = $("portal-results");
+    const placeholders = {registration: "e.g. KDA 123A", policy: "Policy number", certificate: "Certificate number", name: "Client name"};
+    by.addEventListener("change", () => { term.placeholder = placeholders[by.value] || ""; term.focus(); });
+    const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
+    const set = (name, value) => { const f = q(name); if (f) { f.value = value || ""; f.dispatchEvent(new Event("change", {bubbles: true})); } };
+
+    function use(item) {
+      if (item.existing_cover_id && item.existing_cover_active && existing) {
+        existing.value = String(item.existing_cover_id);
+        existing.dispatchEvent(new Event("change", {bubbles: true}));
+        status.textContent = "This policy is already on file here, so the existing cover is selected.";
+        return;
+      }
+      if (existing) { existing.value = ""; existing.dispatchEvent(new Event("change", {bubbles: true})); }
+      set("cover-policy_number", item.policy_number);
+      set("cover-client_name", item.client_name);
+      set("cover-asset_reference", item.vehicle_reg);
+      set("cover-certificate_number", item.certificate_number);
+      set("cover-portal_ref", item.ref);
+      set("cover-insurer", item.insurer_id ? String(item.insurer_id) : "");
+      if (item.start_date && item.end_date) {
+        set("cover-start_date", item.start_date);
+        set("cover-end_date", item.end_date);
+        const details = q("cover-start_date").closest("details");
+        if (details) details.open = true;
+      }
+      const notes = ["Filled in from portal record " + item.ref + "."];
+      if (!item.insurer_id) notes.push(`Insurer “${item.insurer_name || "unknown"}” isn't set up here: choose it, or add it under Insurers first.`);
+      if (!item.policy_number) notes.push("The record has no policy number: enter it.");
+      if (item.existing_cover_id && !item.existing_cover_active) notes.push("This policy is already marked cancelled here.");
+      status.textContent = notes.join(" ");
+      q("case-reason_code").focus();
+    }
+
+    function render(items) {
+      list.replaceChildren(...items.map(item => {
+        const li = el("li", "portal-result");
+        const main = el("div", "portal-result__main");
+        main.append(el("div", "cell-main", item.client_name || "(no name)"));
+        const facts = [item.vehicle_reg, item.policy_number && "Policy " + item.policy_number,
+                       item.certificate_number && "Cert " + item.certificate_number, item.insurer_name,
+                       item.start_date && item.end_date && item.start_date + " → " + item.end_date].filter(Boolean);
+        main.append(el("div", "cell-sub", facts.join(" · ")));
+        const tags = el("div", "portal-result__tags");
+        if (item.cancelled_in_portal) tags.append(el("span", "badge badge--danger", "Cancelled in portal"));
+        if (item.existing_cover_id) tags.append(el("span", "badge badge--info", item.existing_cover_active ? "Already on file" : "Already cancelled here"));
+        if (!item.insurer_id) tags.append(el("span", "badge badge--warning", "Insurer not set up"));
+        if (tags.childElementCount) main.append(tags);
+        const btn = el("button", "btn btn-primary btn-sm", "Use this");
+        btn.type = "button";
+        btn.addEventListener("click", () => use(item));
+        li.append(main, btn);
+        return li;
+      }));
+      list.hidden = !items.length;
+    }
+
+    async function run() {
+      const value = term.value.trim();
+      if (value.length < 3) { status.textContent = "Enter at least 3 characters."; term.focus(); return; }
+      go.disabled = true;
+      status.textContent = "Searching the Production Portal…";
+      try {
+        const res = await fetch(`${portalBox.dataset.url}?${new URLSearchParams({by: by.value, q: value})}`,
+                                {headers: {"Accept": "application/json"}, credentials: "same-origin"});
+        const data = await res.json();
+        if (!data.ok) { render([]); status.textContent = data.error; return; }
+        render(data.items);
+        status.textContent = data.items.length ? `${data.items.length} record${data.items.length === 1 ? "" : "s"} found. Choose the cover to cancel.` : "No matching certificate in the Production Portal.";
+      } catch (e) {
+        render([]);
+        status.textContent = "Search failed. Check your connection and try again.";
+      } finally {
+        go.disabled = false;
+      }
+    }
+    go.addEventListener("click", run);
+    term.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); run(); } });
+  }
 
   /* ---- Live review summary (section E) ---- */
   const summary = $("summary");

@@ -255,6 +255,8 @@
           <dt>Policy no.</dt><dd>{{ case.cover.policy_number }}</dd>
           <dt>Insurer</dt><dd>{{ case.cover.insurer }}<br><span class="muted small">{{ case.cover.insurer.cancellation_email }}</span></dd>
           <dt>Vehicle / asset</dt><dd>{{ case.cover.asset_reference|default:"—" }}</dd>
+          {% if case.cover.certificate_number %}<dt>Certificate no.</dt><dd>{{ case.cover.certificate_number }}</dd>{% endif %}
+          {% if case.cover.portal_ref %}<dt>Portal record</dt><dd>{{ case.cover.portal_ref }}</dd>{% endif %}
           <dt>Premium</dt><dd>{% if case.cover.premium is not None %}{{ case.cover.premium|floatformat:"2g" }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
           <dt>Cover period</dt><dd>{% if case.cover.has_cover_period %}{{ case.cover.start_date|date:"d M Y" }} – {{ case.cover.end_date|date:"d M Y" }}{% else %}<span class="muted">Not recorded</span>{% endif %}</dd>
         </dl>

@@ -56,6 +56,7 @@ def template_context(case):
         "client_name": cover.client_name,
         "policy_number": cover.policy_number,
         "asset_reference": cover.asset_reference or "-",
+        "certificate_number": cover.certificate_number or "-",
         "premium": cover.premium if cover.premium is not None else "-",
         "start_date": cover.start_date.strftime("%d %B %Y") if cover.start_date else "-",
         "end_date": cover.end_date.strftime("%d %B %Y") if cover.end_date else "-",
