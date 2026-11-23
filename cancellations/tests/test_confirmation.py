@@ -57,7 +57,7 @@ class ConfirmTests(TestCase):
     def test_confirm_records_date_refund_and_cancels_cover(self):
         self.confirm(confirmed_effective_date=D(2026, 7, 1))
         self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
+        self.assertEqual(self.case.status, S.CLOSED)  # the insurer's email is the proof: closes straight away
         self.assertEqual(self.case.confirmed_effective_date, D(2026, 7, 1))
         self.assertEqual(self.case.refund_amount, Decimal("18400.00"))  # 184/365 of 36500
         self.assertIsNotNone(self.case.confirmed_at)
@@ -85,12 +85,12 @@ class ConfirmTests(TestCase):
         self.assertEqual(doc.type, DocType.CERTIFICATE)
         self.assertTrue(self.case.has_certificate)
         self.assertTrue(self.case.events.filter(action="CERTIFICATE_RECORDED").exists())
-        # confirmed + certificate = complete, so it closes by itself
+        # confirmation closes the case (certificate or not)
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, S.CLOSED)
         closed = self.case.events.get(action="CLOSED")
         self.assertEqual((closed.from_status, closed.to_status, closed.actor), (S.CONFIRMED, S.CLOSED, self.user))
-        self.assertIn("automatically", closed.note)
+        self.assertIn("confirmed the cancellation by email", closed.note)
         self.assertEqual(self.case.confirmed_effective_date, D(2026, 6, 30))  # confirmation data kept
 
     def test_certificate_upload(self):
@@ -104,10 +104,22 @@ class ConfirmTests(TestCase):
         with self.assertRaises(TransitionError):
             self.confirm(certificate_doc=other_reply.documents.get())
 
-    def test_cannot_close_confirmed_case_without_certificate(self):
+    def test_confirming_closes_without_certificate(self):
         self.confirm()
-        with self.assertRaises(TransitionError):
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.CLOSED)
+        self.assertFalse(self.case.has_certificate)
+        with self.assertRaises(TransitionError):  # closed is final
             close_case(self.case, self.user)
+
+    def test_case_left_at_confirmed_can_be_closed_without_certificate(self):
+        # Cases confirmed before this rule are still at CONFIRMED: Close case works without a certificate.
+        self.confirm()
+        from cancellations.models import CancellationCase
+        CancellationCase.objects.filter(pk=self.case.pk).update(status=S.CONFIRMED)
+        close_case(self.case, self.user)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.CLOSED)
 
     def test_rejection_does_not_cancel_cover(self):
         review_inbound_email(self.reply, C.REJECTION, self.user)
@@ -123,7 +135,7 @@ class ConfirmTests(TestCase):
             "classification": "CONFIRMATION", "confirmed_effective_date": "2026-06-30", "certificate_doc": doc.pk,
         }, follow=True)
         self.assertContains(r, "pro-rata refund 18500.00")
-        self.assertContains(r, "case is closed")
+        self.assertContains(r, "case is now Closed")
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, S.CLOSED)
         self.assertTrue(self.case.has_certificate)
@@ -135,14 +147,18 @@ class ConfirmTests(TestCase):
         self.assertNotContains(page, 'name="confirmed_effective_date"')
         self.assertNotContains(page, 'name="certificate_doc"')
         self.assertContains(page, "Record decision")
-        self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {"classification": "CONFIRMATION"})
+        r = self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {"classification": "CONFIRMATION"},
+                             follow=True)
+        self.assertContains(r, "case is now Closed")
         self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
+        self.assertEqual(self.case.status, S.CLOSED)
         self.assertEqual(self.case.confirmed_effective_date, self.case.effective_date)
 
     def test_second_reply_on_confirmed_case_can_only_be_marked_read(self):
         self.client.force_login(self.user)
         self.confirm()
+        from cancellations.models import CancellationCase
+        CancellationCase.objects.filter(pk=self.case.pk).update(status=S.CONFIRMED)  # a case left at Confirmed
         second, _ = ingest(inbound(subject=f"Re: {self.case.reference}", text="done", message_id="<second@insurer.test>"))
         page = self.client.get(self.case.get_absolute_url())
         self.assertContains(page, "Mark as read")
@@ -158,25 +174,31 @@ class ConfirmTests(TestCase):
         r = self.client.post(reverse("cancellations:email_review", args=[third.pk]), {"classification": "CONFIRMATION"}, follow=True)
         self.assertContains(r, "Select a valid choice")
 
-    def test_confirm_without_certificate_stays_open_until_upload(self):
+    def test_certificate_can_be_added_after_closing(self):
         self.client.force_login(self.user)
-        self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {
-            "classification": "CONFIRMATION", "confirmed_effective_date": "2026-06-30"})
+        self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {"classification": "CONFIRMATION"})
         self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
-        # Another document type does not close it...
-        self.client.post(reverse("cancellations:document_upload", args=[self.case.pk]), {
-            "doc-doc_type": DocType.OTHER, "doc-source": "insurer",
-            "doc-file": SimpleUploadedFile("note.pdf", PDF, "application/pdf")})
+        self.assertEqual(self.case.status, S.CLOSED)
+        page = self.client.get(self.case.get_absolute_url())
+        self.assertContains(page, "Upload document")  # still offered on a closed case
+        r = self.client.post(reverse("cancellations:document_upload", args=[self.case.pk]), {
+            "doc-doc_type": DocType.CERTIFICATE, "doc-source": "insurer",
+            "doc-file": SimpleUploadedFile("cert.pdf", PDF, "application/pdf")}, follow=True)
+        self.assertContains(r, "Uploaded cert.pdf")
         self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
-        # ...the certificate does.
+        self.assertTrue(self.case.has_certificate)
+        self.assertEqual(self.case.status, S.CLOSED)
+        self.assertTrue(self.case.events.filter(action="DOCUMENT_ADDED").exists())
+
+    def test_case_left_at_confirmed_closes_when_certificate_uploaded(self):
+        self.client.force_login(self.user)
+        self.confirm()
+        from cancellations.models import CancellationCase
+        CancellationCase.objects.filter(pk=self.case.pk).update(status=S.CONFIRMED)
         r = self.client.post(reverse("cancellations:document_upload", args=[self.case.pk]), {
             "doc-doc_type": DocType.CERTIFICATE, "doc-source": "insurer",
             "doc-file": SimpleUploadedFile("cert.pdf", PDF, "application/pdf")}, follow=True)
         self.assertContains(r, "complete and has been closed")
-        self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CLOSED)
 
     def test_rejected_case_is_not_auto_closed(self):
         review_inbound_email(self.reply, C.REJECTION, self.user)

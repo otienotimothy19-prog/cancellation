@@ -150,14 +150,17 @@ def _confirm(case, email, actor, note, effective_date, certificate_doc, certific
     if certificate_upload is not None:
         doc = save_uploaded_document(case, certificate_upload, DocType.CERTIFICATE, "insurer", actor)
         log_event(case, "CERTIFICATE_RECORDED", actor, locked.status, locked.status, f"Uploaded {doc.original_name}")
-    close_if_complete(case, actor)
+    # The insurer's confirming reply is the proof (it stays on the case), so nothing else is awaited:
+    # insurers rarely send a cancelled certificate. One can still be uploaded later.
+    transition(case, S.CLOSED, actor, action="CLOSED",
+               note="Closed: the insurer confirmed the cancellation by email (kept on the case as proof).", email=email)
     return case
 
 
 def close_if_complete(case, actor):
-    """A confirmed case with its certificate / credit note stored needs nothing more: close it.
-
-    Returns True if the case was closed. Rejected and query cases are never closed automatically.
+    """Close a case still left at CONFIRMED (confirmed before cases closed on confirmation) once a
+    certificate / credit note is stored. Returns True if the case was closed.
+    Rejected and query cases are never closed automatically.
     """
     current = CancellationCase.objects.get(pk=case.pk)
     if current.status != S.CONFIRMED or not current.has_certificate:
@@ -177,7 +180,6 @@ def note_reply_received(case, email):
 
 @transaction.atomic
 def close_case(case, actor, note=""):
-    current = CancellationCase.objects.select_for_update().get(pk=case.pk)  # never trust a stale object
-    if current.status == S.CONFIRMED and not current.has_certificate:
-        raise TransitionError("Store the cancellation certificate or credit note before closing a confirmed case.")
+    CancellationCase.objects.select_for_update().get(pk=case.pk)  # lock: never act on a stale object
+    # A confirmed case may be closed without a certificate: the insurer's confirming email is the proof.
     return transition(case, S.CLOSED, actor, action="CLOSED", note=note)

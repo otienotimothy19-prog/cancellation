@@ -131,15 +131,18 @@
             <form method="post" action="{% url 'cancellations:email_review' e.pk %}" class="review-box review-form">
               {% csrf_token %}
               <h3>{% icon "list-checks" 16 %}Review this reply</h3>
-              {% if review_form.only_info %}
+              {% if e.review_form.only_info %}
                 <input type="hidden" name="classification" value="INFO">
                 <p class="help" style="margin:0">This case is already {{ case.get_status_display }}, so this reply cannot change its status. Mark it as read once you have checked it.</p>
                 <div class="btn-row" style="justify-content:flex-end;margin-top:14px">
                   <button class="btn btn-primary" data-busy-label="Saving…">{% icon "check-circle" 16 %}<span data-label>Mark as read</span></button>
                 </div>
               {% else %}
-              <div class="choice-list">{{ review_form.classification }}</div>
-              {% if case.status != "CONFIRMED" %}<p class="help" style="margin:10px 0 0">Confirmed uses the case's effective date ({{ case.effective_date|date:"d M Y" }}{% if case.effective_time %} at {{ case.effective_time|time:"H:i" }}{% endif %}) and marks the cover cancelled. Upload the certificate / credit note under Supporting documents; the case then closes automatically.</p>{% endif %}
+              {% if e.suggestion %}
+                <p class="suggestion">{% icon "info" 16 %}<span>The wording looks like <strong>{% if e.suggestion == "CONFIRMATION" %}a confirmation{% elif e.suggestion == "REJECTION" %}a refusal{% else %}a query{% endif %}</strong>, so it is pre-selected. Read the reply before recording it.</span></p>
+              {% endif %}
+              <div class="choice-list">{{ e.review_form.classification }}</div>
+              {% if case.status != "CONFIRMED" %}<p class="help" style="margin:10px 0 0">Confirmed uses the case's effective date ({{ case.effective_date|date:"d M Y" }}{% if case.effective_time %} at {{ case.effective_time|time:"H:i" }}{% endif %}) and closes the case: the insurer's email is kept as proof and the cover is marked cancelled. A certificate / credit note can still be added later.</p>{% endif %}
               <div class="btn-row" style="justify-content:flex-end;margin-top:14px">
                 <button class="btn btn-primary" data-busy-label="Saving…">{% icon "check-circle" 16 %}<span data-label>Record decision</span></button>
               </div>
@@ -185,7 +188,6 @@
           {% include "components/empty_state.html" with icon="paperclip" title="No documents yet" compact=True %}
         {% endif %}
       </div>
-      {% if case.status != "CLOSED" %}
       <form method="post" enctype="multipart/form-data" action="{% url 'cancellations:document_upload' case.pk %}" class="card__foot">
         {% csrf_token %}
         <div class="form-grid" style="align-items:start">
@@ -197,7 +199,6 @@
           <button class="btn btn-secondary" data-busy-label="Uploading…">{% icon "upload" 16 %}<span data-label>Upload document</span></button>
         </div>
       </form>
-      {% endif %}
     </section>
 
     <section class="card">
@@ -280,7 +281,22 @@
           <dl class="kv kv--compact">
             <dt>Effective</dt><dd><strong>{{ case.confirmed_effective_date|date:"d M Y" }}</strong>{% if case.confirmed_effective_date != case.effective_date %}<br><span class="muted small">requested {{ case.effective_date|date:"d M Y" }}</span>{% endif %}</dd>
             <dt>Confirmed</dt><dd>{{ case.confirmed_at|date:"d M Y H:i" }}</dd>
-            <dt>Certificate</dt><dd>{% if case.has_certificate %}<span class="badge badge--success">Stored</span>{% else %}<span class="badge badge--danger">Missing</span><br><a class="small" href="#documents">Upload it as “Cancellation certificate / credit note”</a>{% endif %}</dd>
+            <dt>Proof</dt><dd>{% if case.has_certificate %}<span class="badge badge--success">Certificate stored</span>{% else %}Insurer's confirming email<br><a class="small" href="#documents">Add a certificate / credit note if one arrives</a>{% endif %}</dd>
+            {% if portal_enabled %}
+            <dt>Production Portal</dt><dd>
+              {% if case.portal_status == "CANCELLED" %}<span class="badge badge--success">Cancelled there too</span>
+              {% elif case.portal_status == "ACTIVE" %}<span class="badge badge--warning">Still active there</span><br><span class="muted small">The insurer's notice may not have reached the portal yet.</span>
+              {% elif case.portal_status == "NOT_FOUND" %}<span class="badge badge--neutral">Not in the portal</span><br><span class="muted small">Normal for covers the portal doesn't have.</span>
+              {% elif case.portal_status == "NO_NUMBER" %}<span class="muted">No certificate or policy number to look up</span>
+              {% else %}<span class="muted">Not checked yet</span>{% endif %}
+              {% if case.portal_checked_at %}<br><span class="muted small">Checked {{ case.portal_checked_at|ago }}</span>{% endif %}
+              {% if case.portal_status != "CANCELLED" %}
+              <form method="post" action="{% url 'cancellations:case_portal_check' case.pk %}" style="margin-top:6px">{% csrf_token %}
+                <button class="btn btn-secondary btn-sm" data-busy-label="Checking…">{% icon "search" 14 %}<span data-label>Check now</span></button>
+              </form>
+              {% endif %}
+            </dd>
+            {% endif %}
           </dl>
         {% else %}
           <p class="muted" style="margin:0">Not confirmed by the insurer yet.</p>

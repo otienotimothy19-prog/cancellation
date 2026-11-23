@@ -179,6 +179,17 @@ class CancellationCase(models.Model):
     # SLA tracking
     sla_reminder_sent_at = models.DateTimeField(null=True, blank=True, editable=False)
     stale_at = models.DateTimeField(null=True, blank=True, editable=False)
+
+    class PortalStatus(models.TextChoices):
+        NOT_CHECKED = "", "Not checked"
+        CANCELLED = "CANCELLED", "Cancelled in the Production Portal"
+        ACTIVE = "ACTIVE", "Still active in the Production Portal"
+        NOT_FOUND = "NOT_FOUND", "Not in the Production Portal"
+        NO_NUMBER = "NO_NUMBER", "No certificate or policy number to look up"
+
+    # Last result of the read-only Production Portal check after confirmation (see services/portal.py).
+    portal_status = models.CharField(max_length=10, choices=PortalStatus.choices, default="", blank=True, editable=False)
+    portal_checked_at = models.DateTimeField(null=True, blank=True, editable=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -63,7 +63,7 @@ class OptionalRefundFieldsTests(TestCase):
         review_inbound_email(reply, CaseEmail.Classification.CONFIRMATION, self.user,
                              confirmed_effective_date=dt.date(2027, 3, 1))  # no cover period to check against
         case.refresh_from_db()
-        self.assertEqual(case.status, S.CONFIRMED)
+        self.assertEqual(case.status, S.CLOSED)
         self.assertIsNone(case.refund_amount)
         self.assertIn("No refund calculated", case.events.get(action="MARKED_CONFIRMED").note)
         self.assertContains(self.client.get(case.get_absolute_url()), "No refund calculated")

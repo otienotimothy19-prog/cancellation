@@ -50,10 +50,7 @@ class TransitionTests(TestCase):
         case = make_sent_case(self.user)
         transition(case, S.QUERY, self.user)
         transition(case, S.CONFIRMED, self.user)
-        with self.assertRaises(TransitionError):  # certificate / credit note required first
-            close_case(case, self.user)
-        attach(case, self.user, DocType.CERTIFICATE)
-        close_case(case, self.user)
+        close_case(case, self.user)  # no certificate needed: the insurer's confirmation is the proof
         case.refresh_from_db()
         self.assertEqual(case.status, S.CLOSED)
         self.assertEqual(
@@ -86,7 +83,7 @@ class ReviewTests(TestCase):
         review_inbound_email(self.reply, C.CONFIRMATION, self.user, "Insurer confirmed", confirmed_effective_date=EFF)
         self.case.refresh_from_db()
         self.reply.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
+        self.assertEqual(self.case.status, S.CLOSED)
         self.assertEqual(self.reply.classification, C.CONFIRMATION)
         self.assertEqual(self.reply.reviewed_by, self.user)
         ev = self.case.events.get(action="MARKED_CONFIRMED")
@@ -106,7 +103,9 @@ class ReviewTests(TestCase):
         reply2, _ = ingest(inbound(message_id="<r2@insurer.test>", subject=f"Re: {self.case.reference}"))
         review_inbound_email(reply2, C.CONFIRMATION, self.user, confirmed_effective_date=EFF)
         self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
+        self.assertEqual(self.case.status, S.CLOSED)
+        self.assertEqual(list(self.case.events.filter(action__in=["MARKED_QUERY", "MARKED_CONFIRMED", "CLOSED"])
+                              .values_list("to_status", flat=True)), [S.QUERY, S.CONFIRMED, S.CLOSED])
 
     def test_cannot_confirm_twice(self):
         review_inbound_email(self.reply, C.CONFIRMATION, self.user, confirmed_effective_date=EFF)

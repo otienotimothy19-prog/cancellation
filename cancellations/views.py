@@ -21,6 +21,7 @@ from .reasons import REASONS, DocType, doc_label
 from .services.documents import ALLOWED_TYPES, save_uploaded_document
 from .services.inbound import dismiss_email, link_email
 from .services import portal
+from .services.suggest import suggest as suggest_outcome
 from .services.refunds import pro_rata_refund
 from .services.sending import (
     SendBlocked, content_blockers, follow_up_defaults, render_email, send_blockers, send_case, send_follow_up,
@@ -89,7 +90,11 @@ def dashboard(request):
     cases = CancellationCase.objects.select_related("cover__insurer")
     month_start = _month_start()
     confirmed_month = cases.filter(confirmed_at__gte=month_start)
-    missing_certificates = cases.filter(status=S.CONFIRMED).exclude(documents__type=DocType.CERTIFICATE)
+    # Follow up: cases left at Confirmed from before confirmation closed them, and confirmed covers the
+    # Production Portal still shows active (the insurer's notice may not have reached the portal).
+    follow_up = cases.filter(
+        Q(status=S.CONFIRMED) | Q(portal_status=CancellationCase.PortalStatus.ACTIVE)
+    ).order_by("-confirmed_at")
     return render(request, "cancellations/dashboard.html", {
         "counts": {
             "open": cases.filter(status__in=OPEN_STATUSES).count(),
@@ -103,8 +108,8 @@ def dashboard(request):
         "to_review": _to_review_qs().select_related("case__cover")[:8],
         "to_review_count": _to_review_qs().count(),
         "stale_cases": cases.filter(is_stale=True, status=S.SENT).order_by("sent_at")[:8],
-        "missing_certificates": missing_certificates[:8],
-        "missing_certificates_count": missing_certificates.count(),
+        "follow_up": follow_up[:8],
+        "follow_up_count": follow_up.count(),
         "drafts": cases.filter(status=S.DRAFT).order_by("-created_at")[:8],
         "drafts_count": cases.filter(status=S.DRAFT).count(),
         "recent_confirmed": confirmed_month.order_by("-confirmed_at")[:10],
@@ -275,18 +280,28 @@ def case_detail(request, pk):
     case = get_object_or_404(CancellationCase.objects.select_related("cover__insurer", "created_by"), pk=pk)
     preview_subject, preview_body = render_email(case) if case.status == S.DRAFT else ("", "")
     present = set(case.documents.values_list("type", flat=True))
+    emails = list(case.emails.prefetch_related("documents").order_by("received_at"))
+    for e in emails:
+        # Each unreviewed reply gets its own review form, pre-selected from its wording (suggestion only).
+        if e.direction == CaseEmail.Direction.INBOUND and e.classification == CaseEmail.Classification.UNREVIEWED:
+            form = ReviewForm(case=case, auto_id=f"id_r{e.pk}_%s")
+            allowed = {value for value, _ in form.fields["classification"].choices}
+            hint = suggest_outcome(e.body)
+            e.suggestion = hint if hint in allowed and not form.only_info else None
+            form.initial["classification"] = e.suggestion
+            e.review_form = form
     return render(request, "cancellations/case_detail.html", {
         "case": case,
         "blockers": send_blockers(case) if case.status == S.DRAFT else [],
         "required_docs": [(doc_label(t), t in present) for t in case.required_document_types()],
         "documents": case.documents.all(),
-        "emails": case.emails.prefetch_related("documents").order_by("received_at"),
+        "emails": emails,
         "events": case.events.select_related("actor"),
         "doc_form": DocumentForm(prefix="doc", required=True),
-        "review_form": ReviewForm(case=case),
         "preview_subject": preview_subject,
         "preview_body": preview_body,
         "can_close": case.status in (S.CONFIRMED, S.REJECTED, S.QUERY),
+        "portal_enabled": portal.enabled(),
         "progress": _progress(case),
         **_upload_limits(),
         "follow_up_form": _follow_up_form(case) if case.status == S.QUERY else None,
@@ -377,9 +392,8 @@ def case_follow_up(request, pk):
 @cancellations_role_required
 def document_upload(request, pk):
     case = get_object_or_404(CancellationCase, pk=pk)
-    if case.status == S.CLOSED:
-        messages.error(request, "Closed cases cannot be changed.")
-        return redirect(case)
+    # Documents may be added to a closed case too (e.g. a certificate that arrives after the insurer's
+    # "done"); every upload is logged and nothing else about the case changes.
     form = DocumentForm(request.POST, request.FILES, prefix="doc", required=True)
     if form.is_valid():
         doc = save_uploaded_document(case, form.cleaned_data["file"], form.cleaned_data["doc_type"],
@@ -432,10 +446,7 @@ def email_review(request, email_id):
             if case.confirmed_at and case.status in (S.CONFIRMED, S.CLOSED):
                 msg += " Cover cancelled" + (
                     f"; pro-rata refund {case.refund_amount}." if case.refund_amount is not None else ".")
-                if case.status == S.CONFIRMED:
-                    msg += " Upload the cancellation certificate / credit note under Supporting documents to close it."
-                else:
-                    msg += " Certificate stored, so the case is closed."
+                msg += " The insurer's email is kept as proof."
             messages.success(request, msg)
         except TransitionError as exc:
             messages.error(request, str(exc))
@@ -444,6 +455,20 @@ def email_review(request, email_id):
             for e in errors:
                 messages.error(request, e)
     return redirect(email.case)
+
+
+@require_POST
+@cancellations_role_required
+def case_portal_check(request, pk):
+    """Look the case's cover up in the Production Portal now (read-only)."""
+    case = get_object_or_404(CancellationCase.objects.select_related("cover"), pk=pk)
+    try:
+        status = portal.check_case(case, request.user.email, request.user)
+    except portal.PortalError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, CancellationCase.PortalStatus(status).label + ".")
+    return redirect(case)
 
 
 @require_POST

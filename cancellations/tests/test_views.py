@@ -140,7 +140,7 @@ class ReplyPagesTests(TestCase):
         self.assertContains(page, "Cancelled wef 30/06")
         self.client.post(reverse("cancellations:email_review", args=[reply.pk]), {"classification": "CONFIRMATION", "confirmed_effective_date": "2026-06-30"})
         self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
+        self.assertEqual(self.case.status, S.CLOSED)
 
     def test_unmatched_inbox_link(self):
         from cancellations.services.inbound import ingest

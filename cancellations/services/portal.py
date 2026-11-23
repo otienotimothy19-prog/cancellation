@@ -19,7 +19,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
-from ..models import Cover, Insurer
+from ..models import CancellationCase, Cover, Insurer
 
 logger = logging.getLogger(__name__)
 
@@ -149,3 +149,86 @@ def search(by, term, staff_email):
         })
     active = [r for r in results if is_active(r)]
     return active, len(results) - len(active)
+
+
+# ---------------------------------------------------------------------------
+# After confirmation: does the Production Portal also show the cover cancelled?
+# ---------------------------------------------------------------------------
+PS = CancellationCase.PortalStatus
+
+
+def _lookup(cover, staff_email):
+    """(portal status, matching portal refs) for the cover, looked up by certificate then policy number."""
+    for by, number, key in (("certificate", cover.certificate_number, "certificateNumber"),
+                            ("policy", cover.policy_number, "policyNumber")):
+        number = (number or "").strip()
+        if len(number) < 3:
+            continue
+        data = _get("/api/underwriting/v1/records", {"by": by, "q": number}, staff_email)
+        items = [i for i in (data.get("items") or []) if isinstance(i, dict)
+                 and (i.get(key) or "").strip().upper() == number.upper()]
+        if items:
+            cancelled = [i for i in items if i.get("cancelled") or i.get("status") == "Cancelled"]
+            refs = [str(i.get("ref") or "") for i in (cancelled or items)]
+            return (PS.CANCELLED if cancelled else PS.ACTIVE), refs
+        return PS.NOT_FOUND, []  # searched by the best number we have; not there
+    return PS.NO_NUMBER, []
+
+
+def check_case(case, staff_email=None, actor=None):
+    """Look the case's cover up in the portal and record the result. Logs an event when it changes.
+
+    Raises PortalError when the portal cannot be asked (nothing is recorded then).
+    """
+    from .workflow import log_event
+
+    if not enabled():
+        raise PortalError("The Production Portal is not connected.")
+    status, refs = _lookup(case.cover, staff_email or settings.MAILBOX_USER)
+    now = timezone.now()
+    previous = CancellationCase.objects.filter(pk=case.pk).values_list("portal_status", flat=True).first()
+    CancellationCase.objects.filter(pk=case.pk).update(portal_status=status, portal_checked_at=now)
+    case.portal_status, case.portal_checked_at = status, now
+    if status != previous:
+        where = f" (record {', '.join(refs)})" if refs else ""
+        note = {
+            PS.CANCELLED: f"The Production Portal shows {case.cover.number_label.lower()} cancelled{where}.",
+            PS.ACTIVE: f"{case.cover.number_label} is still active in the Production Portal{where}.",
+            PS.NOT_FOUND: f"{case.cover.number_label} is not in the Production Portal (not every cover is).",
+            PS.NO_NUMBER: "No certificate or policy number to look up in the Production Portal.",
+        }[status]
+        log_event(case, "PORTAL_CHECK", actor, case.status, case.status, note)
+    return status
+
+
+def cases_due_for_check(now=None):
+    """Confirmed (or closed after confirmation) cases whose portal result may still change."""
+    from datetime import timedelta
+
+    from django.db.models import Q
+
+    now = now or timezone.now()
+    active_before = now - timedelta(hours=settings.PORTAL_RECHECK_ACTIVE_HOURS)
+    missing_before = now - timedelta(hours=settings.PORTAL_RECHECK_NOT_FOUND_HOURS)
+    return (CancellationCase.objects.select_related("cover")
+            .filter(confirmed_at__gte=now - timedelta(days=settings.PORTAL_CHECK_DAYS))
+            .filter(Q(portal_status=PS.NOT_CHECKED)
+                    | Q(portal_status=PS.ACTIVE, portal_checked_at__lt=active_before)
+                    | Q(portal_status=PS.NOT_FOUND, portal_checked_at__lt=missing_before))
+            .order_by("portal_checked_at", "confirmed_at"))
+
+
+def check_due(limit=50, now=None):
+    """Worker pass: check up to `limit` due cases. Returns {status: count}; stops at the first portal error."""
+    counts = {}
+    if not enabled():
+        return counts
+    for case in cases_due_for_check(now)[:limit]:
+        try:
+            status = check_case(case)
+        except PortalError as exc:
+            logger.warning("Production Portal check stopped: %s", exc)
+            counts["error"] = str(exc)
+            break
+        counts[status] = counts.get(status, 0) + 1
+    return counts

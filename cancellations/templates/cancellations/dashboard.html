@@ -73,23 +73,24 @@
 
   <section class="card">
     <div class="card__head">
-      <h2>{% icon "shield-check" %}Confirmed — certificate missing</h2>
-      <span class="count-pill{% if missing_certificates_count %} is-hot{% endif %}">{{ missing_certificates_count }}</span>
+      <h2>{% icon "shield-check" %}Confirmed — follow up</h2>
+      <span class="count-pill{% if follow_up_count %} is-hot{% endif %}">{{ follow_up_count }}</span>
     </div>
-    {% if missing_certificates %}
+    {% if follow_up %}
       <ul class="list">
-        {% for c in missing_certificates %}
+        {% for c in follow_up %}
         <li><a class="list-item" href="{{ c.get_absolute_url }}">
           <div class="grow">
             <div class="title"><span class="ref">{{ c.reference }}</span><span class="muted small">{{ c.cover.number }}</span></div>
-            <div class="sub">{{ c.cover.insurer }} · confirmed {{ c.confirmed_at|date:"d M Y" }}</div>
+            <div class="sub">{{ c.cover.insurer }} · confirmed {{ c.confirmed_at|date:"d M Y" }} ·
+              {% if c.status == "CONFIRMED" %}ready to close{% else %}still active in the Production Portal{% endif %}</div>
           </div>
-          <span class="btn btn-secondary btn-sm">{% icon "upload" 15 %}Upload</span>
+          <span class="btn btn-secondary btn-sm">Open{% icon "chevron-right" 15 %}</span>
         </a></li>
         {% endfor %}
       </ul>
     {% else %}
-      {% include "components/empty_state.html" with icon="shield-check" title="All certificates stored" text="Confirmed cases close automatically once their certificate is uploaded." compact=True %}
+      {% include "components/empty_state.html" with icon="shield-check" title="Nothing to follow up" text="Confirmed cases close straight away. Any the Production Portal still shows active will appear here." compact=True %}
     {% endif %}
   </section>
 

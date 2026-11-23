@@ -240,3 +240,9 @@ APP_BASE_URL = env("APP_BASE_URL", "")  # e.g. https://cancellations.imoth.co.ke
 PRODUCTION_PORTAL_URL = (env("PRODUCTION_PORTAL_URL", "") or "").rstrip("/")  # e.g. https://imoth-portal-xxxxx.ondigitalocean.app
 PRODUCTION_PORTAL_TOKEN = env("PRODUCTION_PORTAL_TOKEN", "")  # same value as the portal's CANCELLATIONS_API_TOKEN
 PRODUCTION_PORTAL_TIMEOUT = int(env("PRODUCTION_PORTAL_TIMEOUT", "10"))
+
+# How often the worker re-checks confirmed cases against the Production Portal, and for how long.
+PORTAL_CHECK_INTERVAL = int(env("PORTAL_CHECK_INTERVAL", "300"))  # seconds between worker passes
+PORTAL_RECHECK_ACTIVE_HOURS = int(env("PORTAL_RECHECK_ACTIVE_HOURS", "1"))  # still active there: look again after
+PORTAL_RECHECK_NOT_FOUND_HOURS = int(env("PORTAL_RECHECK_NOT_FOUND_HOURS", "12"))  # not there (yet): look again after
+PORTAL_CHECK_DAYS = int(env("PORTAL_CHECK_DAYS", "60"))  # stop checking this many days after confirmation

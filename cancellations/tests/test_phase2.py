@@ -53,13 +53,9 @@ class ExportTests(TestCase):
         self.assertEqual(row["requested_effective_date"], "2026-06-30")
         self.assertEqual(row["refund_amount"], "18500.00")
         self.assertEqual(row["currency"], "KES")
-        self.assertEqual(row["status"], S.CONFIRMED)
+        self.assertEqual(row["status"], S.CLOSED)  # confirming closes the case
 
     def test_api_includes_closed_and_filters_by_date(self):
-        attach(self.confirmed, self.user, DocType.CERTIFICATE)
-        from cancellations.services.workflow import close_case
-
-        close_case(self.confirmed, self.user)
         today = timezone.localdate().isoformat()
         tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
         auth = {"HTTP_AUTHORIZATION": f"Bearer {TOKEN}"}

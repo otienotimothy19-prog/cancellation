@@ -70,7 +70,7 @@ class FollowUpTests(TestCase):
         self.assertEqual(reply.matched_by, CaseEmail.MatchedBy.THREAD_HEADERS)
         review_inbound_email(reply, C.CONFIRMATION, self.user, confirmed_effective_date=self.case.effective_date)
         self.case.refresh_from_db()
-        self.assertEqual(self.case.status, S.CONFIRMED)
+        self.assertEqual(self.case.status, S.CLOSED)  # confirmed, then closed straight away
 
     def test_sla_restarts_from_follow_up(self):
         CancellationCase.objects.filter(pk=self.case.pk).update(

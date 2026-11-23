@@ -145,3 +145,84 @@ class InsurerMatchTests(TestCase):
         self.assertEqual(portal.match_insurer("Jubilee Allianz Ltd", insurers), b)
         self.assertIsNone(portal.match_insurer("", insurers))
         self.assertIsNone(portal.match_insurer("Insurance", [a, make_insurer("Kenya Insurance")]))  # ambiguous
+
+
+@override_settings(**PORTAL)
+class PortalCancellationCheckTests(TestCase):
+    """After confirmation the worker asks the portal whether it also shows the certificate cancelled."""
+
+    def setUp(self):
+        from cancellations.services.workflow import review_inbound_email
+        from cancellations.services.inbound import ingest
+        from .factories import inbound, make_sent_case
+
+        self.user = make_user()
+        self.insurer = make_insurer("Acme Insurance")
+        self.case = make_sent_case(self.user, cover=make_cover(self.insurer, certificate_number="C35561500"))
+        reply, _ = ingest(inbound(subject=f"Re: {self.case.reference}"))
+        review_inbound_email(reply, "CONFIRMATION", self.user, confirmed_effective_date=self.case.effective_date)
+        self.case.refresh_from_db()
+
+    def run_check(self, items):
+        with mock.patch("cancellations.services.portal.urllib.request.urlopen", return_value=reply(items)) as m:
+            result = portal.check_due()
+        self.case.refresh_from_db()
+        return result, m
+
+    def test_cancelled_in_portal(self):
+        result, m = self.run_check([{**ITEM, "certificateNumber": "C35561500", "cancelled": True, "status": "Cancelled"}])
+        self.assertEqual(result, {"CANCELLED": 1})
+        self.assertEqual(self.case.portal_status, "CANCELLED")
+        self.assertIn("by=certificate&q=C35561500", m.call_args.args[0].full_url)
+        self.assertIn("cancelled", self.case.events.get(action="PORTAL_CHECK").note)
+        self.assertEqual(list(portal.cases_due_for_check()), [])  # settled: not asked again
+
+    def test_still_active_shows_on_dashboard_and_is_rechecked(self):
+        self.run_check([{**ITEM, "certificateNumber": "C35561500"}])
+        self.assertEqual(self.case.portal_status, "ACTIVE")
+        self.client.force_login(self.user)
+        dash = self.client.get(reverse("cancellations:dashboard"))
+        self.assertContains(dash, "still active in the Production Portal")
+        from datetime import timedelta
+        from django.utils import timezone
+        self.assertEqual(list(portal.cases_due_for_check()), [])
+        self.assertEqual(list(portal.cases_due_for_check(timezone.now() + timedelta(hours=2))), [self.case])
+
+    def test_not_in_portal_is_neutral(self):
+        # Some requests are for covers the portal does not have: recorded, not flagged.
+        self.run_check([])
+        self.assertEqual(self.case.portal_status, "NOT_FOUND")
+        self.assertEqual(self.case.status, "CLOSED")
+        self.client.force_login(self.user)
+        dash = self.client.get(reverse("cancellations:dashboard"))
+        self.assertEqual(dash.context["follow_up_count"], 0)  # not flagged for follow-up
+        page = self.client.get(self.case.get_absolute_url())
+        self.assertContains(page, "Not in the portal")
+        # Only one event however often it is checked
+        self.run_check([])
+        self.assertEqual(self.case.events.filter(action="PORTAL_CHECK").count(), 1)
+
+    def test_other_certificates_in_results_do_not_count(self):
+        self.run_check([{**ITEM, "certificateNumber": "C99999999", "cancelled": True}])
+        self.assertEqual(self.case.portal_status, "NOT_FOUND")
+
+    def test_check_now_button_and_portal_errors(self):
+        self.client.force_login(self.user)
+        url = reverse("cancellations:case_portal_check", args=[self.case.pk])
+        with mock.patch("cancellations.services.portal.urllib.request.urlopen",
+                        side_effect=urllib.error.URLError("down")):
+            r = self.client.post(url, follow=True)
+        self.assertContains(r, "Could not reach")
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.portal_status, "")  # nothing recorded on error
+        with mock.patch("cancellations.services.portal.urllib.request.urlopen",
+                        return_value=reply([{**ITEM, "certificateNumber": "C35561500", "cancelled": True}])):
+            r = self.client.post(url, follow=True)
+        self.assertContains(r, "Cancelled in the Production Portal")
+
+    def test_no_number(self):
+        from cancellations.models import Cover
+        Cover.objects.filter(pk=self.case.cover_id).update(certificate_number="", policy_number="")
+        result, m = self.run_check([])
+        self.assertEqual(self.case.portal_status, "NO_NUMBER")
+        m.assert_not_called()

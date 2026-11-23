@@ -52,16 +52,29 @@ SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (clea
    - moves the case back to **SENT** and restarts the SLA clock (`last_sent_at`), while `sent_at` keeps the original request time
 
    As with the first request, a provider error sends nothing, leaves the case in QUERY and logs `SEND_FAILED`.
-5. **On CONFIRMED,** the review form asks for the **effective date the insurer confirmed**. It defaults to the requested date and must fall inside the cover period. The app then:
-   - records the **pro-rata refund of unearned premium**, and shows the working in the audit log
-   - marks the **cover CANCELLED**
-   - stores the **cancellation certificate / credit note**, either by picking one of the reply's attachments or by uploading a file
+5. **Reviewing a reply.** The review box offers only the outcomes the case's status allows. It reads the insurer's
+   own new text (the quoted copy of our request and anything after the sign-off are ignored) and, when the wording
+   is clear ("done", "has been cancelled", "kindly provide…", "unable to cancel"), **pre-selects** Confirmed, Query or
+   Rejected with a note saying so. This is a suggestion only: nothing is recorded until staff press **Record decision**
+   (the "never auto-confirm" rule). Mixed wording ("not yet done", "will be cancelled") gets no suggestion.
 
-   **Once the certificate is stored, the case closes automatically**: at confirmation time, or later when you upload a document of type *Cancellation certificate / credit note*. Until then it stays CONFIRMED and the dashboard lists it under "certificate missing". Rejected and query cases are never closed automatically; use **Close case**.
+   **On CONFIRMED** the app uses the case's (locked) effective date as the confirmed date, then:
+   - records the **pro-rata refund of unearned premium** when premium and cover dates were given, with the working in the audit log
+   - marks the **cover CANCELLED**
+   - **closes the case**. Insurers usually just reply "done", so their confirming email (kept on the case) is the proof.
+     A cancellation certificate / credit note is optional and can be uploaded at any time, even after closing.
+
+   **Production Portal check.** When the portal is connected, the worker looks up each confirmed case's certificate
+   (or policy) number in the Production Portal for `PORTAL_CHECK_DAYS` (default 60) days and records one of:
+   *Cancelled there too*, *Still active there* (re-checked hourly; listed on the dashboard under "Confirmed — follow up",
+   as the insurer's notice may not have reached the portal), *Not in the portal* (neutral: not every cover is in the
+   portal; re-checked every 12 hours in case it is added), or *No number to look up*. Each change is logged on the case,
+   and the case page has a **Check now** button. Run `manage.py check_portal` for a one-off pass. The portal is only
+   searched (read-only); its notice emails and documents are not fetched.
 6. **SLA.** If a SENT case gets no insurer reply within the insurer's `sla_hours`, the staff member who created it gets a **reminder email**. The reminders are bundled into one email per person. If there's still no reply `SLA_STALE_AFTER_REMINDER_HOURS` later (default 24), the case is **flagged STALE**. STALE is a flag, not a status. Any reply linked to the case clears it. The count uses wall-clock hours.
 7. **Dashboard** (the home page) shows:
    - counts of open, stale, unmatched and confirmed-this-month cases, plus the month's refund total
-   - work lists: replies to review (each with a **Review** button that jumps straight to that reply's decision form), stale cases, missing certificates and drafts
+   - work lists: replies to review (each with a **Review** button that jumps straight to that reply's decision form), stale cases, "Confirmed — follow up" (still active in the Production Portal, or left at Confirmed from before cases closed on confirmation) and drafts
    - a search box for a certificate number, policy number or an `IMOTH-CXL-…` reference; a single hit opens the case directly
 
 ### Refund calculation
@@ -210,7 +223,7 @@ The test settings use SQLite, the in-memory mail backend and a fake IMAP server,
 - IMAP polling: only new UIDs are fetched, a UIDVALIDITY reset is handled, a failing message is retried then skipped, and fetches never mark mail as read
 - send-blocking validation
 - follow-ups to insurer queries: recipients, threading headers, attachments, return to SENT, SLA restart, the next reply matched by thread, send failure leaves QUERY
-- the refund calculation (mid-term, inception, last day, after expiry, leap year, rounding) and the confirm flow: cover cancelled, certificate from an attachment or an upload, close blocked without a certificate
+- the refund calculation (mid-term, inception, last day, after expiry, leap year, rounding) and the confirm flow: cover cancelled and the case closed on confirmation, optional certificate from an attachment or an upload (also after closing), reply-wording suggestions and the Production Portal check
 - SLA: no action before the deadline, one reminder, the STALE flag after the grace period, a reply clears it, a failed send is retried, the per-insurer SLA
 - the CSV export and the JSON API: auth, filters, pagination, formula neutralising
 - dashboard counts and search
@@ -243,7 +256,7 @@ The app logs in to the mailbox **`cancellation@imoth.co.ke`**. It sends through 
    ```
 
    It shows the authentication headers Zoho stamped and whether each message would count as verified. Nothing in the mailbox changes. If Zoho's verdict is in `ARC-Authentication-Results` rather than `Authentication-Results`, set `INBOUND_AUTH_HEADER=ARC-Authentication-Results`. If the authserv-id isn't `mx.zohomail.com`, set `INBOUND_AUTHSERV_ID` to what it shows.
-6. **Run the worker.** In production it's the `worker` component in `.do/app.yaml`, which runs `python manage.py run_worker`. That one process polls the mailbox every `MAIL_POLL_INTERVAL` seconds and runs the SLA check every `SLA_CHECK_INTERVAL` seconds. Run **one** instance only. A second one would be harmless, but it would duplicate the work. For one-off runs there are `poll_mailbox` and `check_sla`.
+6. **Run the worker.** In production it's the `worker` component in `.do/app.yaml`, which runs `python manage.py run_worker`. That one process polls the mailbox every `MAIL_POLL_INTERVAL` seconds, runs the SLA check every `SLA_CHECK_INTERVAL` seconds and the Production Portal check every `PORTAL_CHECK_INTERVAL` seconds. Run **one** instance only. A second one would be harmless, but it would duplicate the work. For one-off runs there are `poll_mailbox` and `check_sla`.
 
 Mailbox habits: keep insurer replies in `INBOX` (`IMAP_FOLDER`) until they appear on the case. The worker reads only that folder, so a Zoho filter that moves replies into another folder would hide them from the app. Reading, flagging or archiving later is fine, because the app keeps its own copy of each email and attachment.
 
@@ -338,7 +351,7 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 2. Create a **private** Spaces bucket and an access key pair.
 3. Edit `.do/app.yaml`: set the repo, the domain and your values. Then run `doctl apps create --spec .do/app.yaml`, or create the app in the UI with the same components:
    - a **web** service: build `python manage.py collectstatic --noinput`, run `gunicorn config.wsgi --bind 0.0.0.0:8080 --workers 2`
-   - a **worker**: `python manage.py run_worker` (mailbox polling + SLA checks), with exactly 1 instance
+   - a **worker**: `python manage.py run_worker` (mailbox polling, SLA checks, Production Portal check), with exactly 1 instance
    - a **pre-deploy job**: `python manage.py migrate --noinput`
    - a Managed Postgres database
 4. Enter the secrets (`SECRET_KEY`, `MAILBOX_PASSWORD`, `EXPORT_API_TOKENS` and the Spaces keys) as encrypted env vars on both the web service and the worker.
