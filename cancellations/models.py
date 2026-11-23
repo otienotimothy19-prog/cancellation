@@ -186,7 +186,11 @@ class CancellationCase(models.Model):
 
     def required_document_types(self):
         types = list(self.reason.required_documents) if self.reason else []
-        if self.cover_id and self.cover.insurer.requires_signed_form:
+        try:
+            cover = self.cover  # may be an unsaved Cover (create-form preview)
+        except Cover.DoesNotExist:
+            cover = None
+        if cover is not None and cover.insurer.requires_signed_form:
             types.append(DocType.SIGNED_FORM)
         return types
 

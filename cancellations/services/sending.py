@@ -26,6 +26,12 @@ def send_blockers(case):
     problems = []
     if case.status != S.DRAFT:
         problems.append(f"Case is {case.get_status_display()}, only drafts can be sent.")
+    return problems + content_blockers(case, set(case.documents.values_list("type", flat=True)))
+
+
+def content_blockers(case, present_doc_types):
+    """Checks on the case's content; works on an unsaved case too (used by the create-form preview)."""
+    problems = []
     if not case.reason_code:
         problems.append("Reason code is missing.")
     if not case.effective_date:
@@ -34,9 +40,8 @@ def send_blockers(case):
         for field in case.reason.required_fields:
             if getattr(case, field) in (None, ""):
                 problems.append(f"{case.reason.label} requires the {FIELD_LABELS.get(field, field)}.")
-    present = set(case.documents.values_list("type", flat=True))
     for doc_type in case.required_document_types():
-        if doc_type not in present:
+        if doc_type not in present_doc_types:
             problems.append(f"Required document missing: {doc_label(doc_type)}.")
     insurer = case.cover.insurer
     if not insurer.cancellation_email:
@@ -62,12 +67,18 @@ def template_context(case):
     }
 
 
-def render_email(case):
-    """Return (subject, body) for the insurer's template. Plain text, so autoescape is off."""
+def render_email(case, reference=None):
+    """Return (subject, body) for the insurer's template. Plain text, so autoescape is off.
+
+    `reference` overrides the case reference (the create-form preview has no number yet).
+    """
     cover = case.cover
-    subject = f"Cancellation request {case.reference} – Policy {cover.policy_number} – {cover.client_name}"
+    context = template_context(case)
+    if reference:
+        context["reference"] = reference
+    subject = f"Cancellation request {context['reference']} – Policy {cover.policy_number} – {cover.client_name}"
     template = Template("{% autoescape off %}" + cover.insurer.template_text() + "{% endautoescape %}")
-    return subject, template.render(Context(template_context(case)))
+    return subject, template.render(Context(context))
 
 
 def send_case(case, actor):

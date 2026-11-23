@@ -56,9 +56,32 @@
   </div>
   {% endif %}
 
-  <button class="btn">Save draft</button>
+  {% if creating %}
+    <button class="btn" name="action" value="send" id="save-send">Save &amp; send…</button>
+    <button class="btn secondary" name="action" value="draft">Save draft</button>
+  {% else %}
+    <button class="btn">Save draft</button>
+  {% endif %}
   {% if case %}<a class="btn secondary" href="{{ case.get_absolute_url }}">Cancel</a>{% endif %}
 </form>
+
+{% if creating %}
+<dialog id="send-preview" style="max-width:760px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:8px;padding:18px">
+  <h2 style="margin-top:0">Check before sending</h2>
+  <div id="pv-problems" class="badbox" hidden></div>
+  <div id="pv-email" hidden>
+    <dl class="kv"><dt>To</dt><dd id="pv-to"></dd><dt>Cc</dt><dd id="pv-cc"></dd><dt>Subject</dt><dd id="pv-subject"></dd></dl>
+    <pre class="mail" id="pv-body"></pre>
+  </div>
+  <p class="row" style="justify-content:flex-end">
+    <button type="button" class="btn secondary" id="pv-back" style="flex:0">Back to edit</button>
+    <button type="button" class="btn secondary" id="pv-draft" style="flex:0" hidden>Save as draft</button>
+    <button type="button" class="btn" id="pv-send" style="flex:0" hidden>Send now</button>
+  </p>
+</dialog>
+{% url 'cancellations:case_preview' as preview_url %}
+{{ preview_url|json_script:"preview-url" }}
+{% endif %}
 {{ reason_meta|json_script:"reason-meta" }}
 {% endblock %}
 {% block scripts %}
@@ -84,6 +107,55 @@
     const toggle = () => document.getElementById("new-cover").style.display = existing.value ? "none" : "";
     existing.addEventListener("change", toggle); toggle();
   }
+
+  // "Save & send": show the exact email (or what is missing) before anything is saved or sent.
+  const sendBtn = document.getElementById("save-send");
+  const dlg = document.getElementById("send-preview");
+  if (!sendBtn || !dlg || typeof dlg.showModal !== "function") return;  // no JS dialog: plain submit still validates
+  const form = sendBtn.form;
+  const $ = id => document.getElementById(id);
+  const submitWith = action => {
+    const input = Object.assign(document.createElement("input"), {type: "hidden", name: "action", value: action});
+    form.appendChild(input);
+    form.submit();
+  };
+  sendBtn.addEventListener("click", async e => {
+    e.preventDefault();
+    const data = new FormData(form);
+    const file = data.get("doc-file");
+    data.delete("doc-file");  // the preview does not need the file itself
+    data.set("doc-has_file", file && file.size ? "1" : "0");
+    sendBtn.disabled = true;
+    let res;
+    try {
+      const r = await fetch(JSON.parse($("preview-url").textContent), {method: "POST", body: data, credentials: "same-origin"});
+      res = await r.json();
+    } catch (err) {
+      res = {ok: false, problems: ["Could not load the preview: " + err]};
+    } finally {
+      sendBtn.disabled = false;
+    }
+    $("pv-problems").hidden = res.ok;
+    $("pv-problems").replaceChildren();
+    if (!res.ok) {
+      const ul = document.createElement("ul");
+      (res.problems || []).forEach(p => ul.appendChild(Object.assign(document.createElement("li"), {textContent: p})));
+      $("pv-problems").append(Object.assign(document.createElement("strong"), {textContent: "Cannot send yet:"}), ul);
+    }
+    $("pv-email").hidden = !res.body;
+    if (res.body) {
+      $("pv-to").textContent = res.to;
+      $("pv-cc").textContent = (res.cc || []).join(", ") || "—";
+      $("pv-subject").textContent = res.subject;
+      $("pv-body").textContent = res.body;
+    }
+    $("pv-send").hidden = !res.ok;
+    $("pv-draft").hidden = res.ok || !!res.form_errors;  // blocked but valid: offer to keep it as a draft
+    dlg.showModal();
+  });
+  $("pv-back").addEventListener("click", () => dlg.close());
+  $("pv-send").addEventListener("click", () => { $("pv-send").disabled = true; submitWith("send"); });
+  $("pv-draft").addEventListener("click", () => submitWith("draft"));
 })();
 </script>
 {% endblock %}
