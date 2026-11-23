@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}Insurers · IMOTH Cancellations{% endblock %}
+{% block header_title %}Insurers{% endblock %}
+{% block page_description %}Where cancellation requests go and who may reply{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-header__title">
+    <h2>Insurers</h2>
+    <p>{{ insurers|length }} insurer{{ insurers|length|pluralize }}</p>
+  </div>
+  <div class="btn-row">
+    <a class="btn btn-primary" href="{% url 'cancellations:insurer_create' %}">{% icon "plus" %}Add insurer</a>
+  </div>
+</div>
+
+<section class="card">
+  {% if insurers %}
+  <div class="table-wrap">
+    <table class="table table--stack">
+      <thead>
+        <tr><th>Insurer</th><th>Cancellation email</th><th>Reply within</th><th>Covers</th><th>Open cases</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr>
+      </thead>
+      <tbody>
+      {% for i in insurers %}
+        {% url 'cancellations:insurer_edit' i.pk as edit_url %}
+        <tr data-href="{{ edit_url }}">
+          <td data-label="Insurer"><div><div class="cell-main"><a href="{{ edit_url }}">{{ i.name }}</a></div>
+            {% if i.requires_signed_form %}<div class="cell-sub">Signed form required</div>{% endif %}</div></td>
+          <td data-label="Cancellation email" style="overflow-wrap:anywhere">{{ i.cancellation_email }}</td>
+          <td data-label="Reply within" class="nowrap">{{ i.sla_hours }} h</td>
+          <td data-label="Covers">{{ i.cover_count }}</td>
+          <td data-label="Open cases">{{ i.open_count }}</td>
+          <td data-label="Status" class="nowrap"><span>{% if i.active %}<span class="badge badge--success">Active</span>{% else %}<span class="badge badge--muted">Inactive</span>{% endif %}</span></td>
+          <td data-label="" class="right"><a class="btn btn-secondary btn-sm" href="{{ edit_url }}">{% icon "pencil" 15 %}Edit</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {% url 'cancellations:insurer_create' as new_url %}
+    {% include "components/empty_state.html" with icon="building" title="No insurers yet" text="Add an insurer before creating your first cancellation request." action_url=new_url action_label="Add insurer" %}
+  {% endif %}
+</section>
+{% endblock %}

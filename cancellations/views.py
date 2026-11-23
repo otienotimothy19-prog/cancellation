@@ -5,15 +5,17 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .forms import CaseForm, CoverChoiceForm, DocumentForm, FollowUpForm, LinkEmailForm, ReviewForm, SearchForm
-from .models import CancellationCase, CaseDocument, CaseEmail, MailboxState
+from .forms import (
+    CaseForm, CoverChoiceForm, DocumentForm, FollowUpForm, InsurerForm, LinkEmailForm, ReviewForm, SearchForm,
+)
+from .models import DEFAULT_EMAIL_TEMPLATE, CancellationCase, CaseDocument, CaseEmail, Insurer, MailboxState
 from .permissions import cancellations_role_required
 from .reasons import REASONS, DocType, doc_label
 from .services.documents import ALLOWED_TYPES, save_uploaded_document
@@ -474,3 +476,34 @@ def unmatched_detail(request, email_id):
                 messages.success(request, f"Linked to {form.cleaned_data['case'].reference}.")
                 return redirect(form.cleaned_data["case"])
     return _unmatched_inbox(request, email, form)
+
+
+@cancellations_role_required
+def insurer_list(request):
+    insurers = Insurer.objects.annotate(
+        cover_count=Count("covers", distinct=True),
+        open_count=Count("covers__cases", filter=Q(covers__cases__status__in=OPEN_STATUSES), distinct=True),
+    ).order_by("-active", "name")
+    return render(request, "cancellations/insurer_list.html", {"insurers": insurers})
+
+
+def _insurer_form(request, insurer=None):
+    form = InsurerForm(request.POST or None, instance=insurer)
+    if request.method == "POST" and form.is_valid():
+        saved = form.save()
+        messages.success(request, f"{saved.name} {'updated' if insurer else 'added'}.")
+        return redirect("cancellations:insurer_list")
+    return render(request, "cancellations/insurer_form.html", {
+        "form": form, "insurer": insurer, "default_template": DEFAULT_EMAIL_TEMPLATE,
+        "template_variables": InsurerForm.TEMPLATE_VARIABLES,
+    })
+
+
+@cancellations_role_required
+def insurer_create(request):
+    return _insurer_form(request)
+
+
+@cancellations_role_required
+def insurer_edit(request, pk):
+    return _insurer_form(request, get_object_or_404(Insurer, pk=pk))

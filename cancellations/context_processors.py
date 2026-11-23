@@ -12,6 +12,7 @@ NAV = [
     ("cancellations:case_list", "Cases", "folder", {"case_list", "case_detail", "case_edit"}),
     ("cancellations:case_create", "New Cancellation", "file-plus", {"case_create"}),
     ("cancellations:unmatched_list", "Unmatched Inbox", "inbox", {"unmatched_list", "unmatched_detail"}),
+    ("cancellations:insurer_list", "Insurers", "building", {"insurer_list", "insurer_create", "insurer_edit"}),
 ]
 
 

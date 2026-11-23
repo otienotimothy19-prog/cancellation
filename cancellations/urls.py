@@ -19,6 +19,9 @@ urlpatterns = [
     path("emails/<int:email_id>/review/", views.email_review, name="email_review"),
     path("unmatched/", views.unmatched_list, name="unmatched_list"),
     path("unmatched/<int:email_id>/", views.unmatched_detail, name="unmatched_detail"),
+    path("insurers/", views.insurer_list, name="insurer_list"),
+    path("insurers/new/", views.insurer_create, name="insurer_create"),
+    path("insurers/<int:pk>/", views.insurer_edit, name="insurer_edit"),
     path("exports/confirmed-cancellations.csv", exports.confirmed_csv, name="confirmed_csv"),
     path("api/confirmed-cancellations/", exports.confirmed_api, name="confirmed_api"),
 ]

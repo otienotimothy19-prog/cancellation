@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}{% if insurer %}Edit {{ insurer.name }}{% else %}Add insurer{% endif %} · IMOTH Cancellations{% endblock %}
+{% block header_title %}{% if insurer %}{{ insurer.name }}{% else %}Add insurer{% endif %}{% endblock %}
+{% block page_description %}{% if insurer %}Changes apply to requests sent from now on{% else %}Where cancellation requests go and who may reply{% endif %}{% endblock %}
+{% block content %}
+<form method="post" novalidate>{% csrf_token %}
+  {% if form.non_field_errors %}<ul class="errorlist nonfield">{% for e in form.non_field_errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+  <section class="form-section">
+    <div class="form-section__head"><span class="step">{% icon "building" 16 %}</span>
+      <div><h2>Insurer details</h2><p>Cancellation requests are emailed to this address.</p></div>
+    </div>
+    <div class="form-section__body">
+      <div class="form-grid">
+        {% include "components/field.html" with field=form.name %}
+        {% include "components/field.html" with field=form.cancellation_email %}
+        {% include "components/field.html" with field=form.cc_list span="span-all" %}
+        {% include "components/field.html" with field=form.sla_hours %}
+      </div>
+      <div class="stack" style="margin-top:16px">
+        <label class="check">{{ form.requires_signed_form }}<span>{{ form.requires_signed_form.label }}<br><span class="help">{{ form.requires_signed_form.help_text }}</span></span></label>
+        <label class="check">{{ form.active }}<span>Active<br><span class="help">{{ form.active.help_text }}</span></span></label>
+      </div>
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section__head"><span class="step">{% icon "shield-check" 16 %}</span>
+      <div><h2>Replies</h2><p>Replies from other addresses go to the Unmatched Inbox or need a manual sender check.</p></div>
+    </div>
+    <div class="form-section__body">
+      {% include "components/field.html" with field=form.known_sender_addresses %}
+    </div>
+  </section>
+
+  <section class="form-section">
+    <div class="form-section__head"><span class="step">{% icon "mail" 16 %}</span>
+      <div><h2>Email template</h2><p>Leave blank to use the standard wording.</p></div>
+    </div>
+    <div class="form-section__body">
+      {% include "components/field.html" with field=form.email_template %}
+      <p class="help" style="margin:8px 0 0">Insert case details by writing a variable in double braces, e.g. <code>{% templatetag openvariable %} client_name {% templatetag closevariable %}</code>. Variables: {% for v in template_variables %}<code>{{ v }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+      <details class="reveal" style="margin-top:12px">
+        <summary>{% icon "chevron-right" 14 %}Show the standard wording</summary>
+        <pre class="mail">{{ default_template }}</pre>
+      </details>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <span class="grow">{% if insurer %}Cases already sent are not changed.{% else %}You can edit these settings later.{% endif %}</span>
+    <a class="btn btn-ghost" href="{% url 'cancellations:insurer_list' %}">Cancel</a>
+    <button class="btn btn-primary" data-busy-label="Saving…">{% icon "save" 16 %}<span data-label>{% if insurer %}Save changes{% else %}Add insurer{% endif %}</span></button>
+  </div>
+</form>
+{% endblock %}

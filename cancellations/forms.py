@@ -1,7 +1,9 @@
 from django import forms
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.template import Context, Template, TemplateSyntaxError
 
-from .models import CancellationCase, CaseDocument, Cover, Insurer
+from .models import CancellationCase, CaseDocument, Cover, Insurer, split_addresses
 from .reasons import REASON_CHOICES, DocType
 from .services.documents import validate_uploaded_file
 
@@ -190,3 +192,82 @@ class SearchForm(forms.Form):
     view = forms.ChoiceField(required=False, choices=[
         ("", "All cases"), ("open", "Open"), ("stale", "Stale"), ("confirmed_month", "Confirmed this month"),
     ], label="Show")
+
+
+class InsurerForm(forms.ModelForm):
+    """Insurer settings used when sending requests and checking replies."""
+
+    TEMPLATE_VARIABLES = (
+        "reference", "client_name", "policy_number", "asset_reference", "premium", "start_date", "end_date",
+        "reason", "reason_code", "reason_note", "effective_date", "insurer_name",
+    )
+
+    class Meta:
+        model = Insurer
+        fields = [
+            "name", "cancellation_email", "cc_list", "known_sender_addresses", "sla_hours",
+            "requires_signed_form", "active", "email_template",
+        ]
+        labels = {
+            "cancellation_email": "Cancellation email",
+            "cc_list": "CC on every request",
+            "known_sender_addresses": "Other addresses allowed to reply",
+            "sla_hours": "Reply expected within (hours)",
+            "requires_signed_form": "Requires a signed cancellation form",
+            "email_template": "Email template",
+        }
+        help_texts = {
+            "cc_list": "Comma separated, e.g. ops@insurer.co.ke, claims@insurer.co.ke",
+            "known_sender_addresses": (
+                "Full addresses (claims@insurer.co.ke) or a whole domain starting with @ (@insurer.co.ke). "
+                "The cancellation email and CC addresses are always allowed."
+            ),
+            "sla_hours": "After this a reminder is sent; with no reply after that the case is flagged stale.",
+            "requires_signed_form": "Sending is blocked until a signed form is attached to the case.",
+            "active": "Inactive insurers stay on existing cases but can't be chosen for new ones.",
+        }
+        widgets = {
+            "cc_list": forms.TextInput(),
+            "known_sender_addresses": forms.TextInput(),
+            "email_template": forms.Textarea(attrs={"rows": 14, "class": "mono", "spellcheck": "false"}),
+        }
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        clash = Insurer.objects.filter(name__iexact=name).exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise ValidationError("An insurer with this name already exists.")
+        return name
+
+    def clean_cancellation_email(self):
+        return self.cleaned_data["cancellation_email"].strip().lower()
+
+    @staticmethod
+    def _addresses(value, allow_domains):
+        bad = []
+        for item in split_addresses(value):
+            candidate = "x" + item if allow_domains and item.startswith("@") else item
+            try:
+                validate_email(candidate)
+            except ValidationError:
+                bad.append(item)
+        if bad:
+            raise ValidationError("Not a valid address: %(bad)s", params={"bad": ", ".join(bad)})
+        return ", ".join(split_addresses(value))
+
+    def clean_cc_list(self):
+        return self._addresses(self.cleaned_data["cc_list"], allow_domains=False)
+
+    def clean_known_sender_addresses(self):
+        return self._addresses(self.cleaned_data["known_sender_addresses"], allow_domains=True)
+
+    def clean_email_template(self):
+        text = self.cleaned_data["email_template"].replace("\r\n", "\n")
+        if not text.strip():
+            return ""
+        try:
+            Template("{% autoescape off %}" + text + "{% endautoescape %}").render(
+                Context({v: v for v in self.TEMPLATE_VARIABLES}))
+        except TemplateSyntaxError as exc:
+            raise ValidationError("The template has an error: %(error)s", params={"error": exc}) from exc
+        return text
