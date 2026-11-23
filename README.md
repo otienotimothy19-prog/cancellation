@@ -1,5 +1,7 @@
 # IMOTH Cancellations
 
+[![tests](https://github.com/otienotimothy19-prog/cancellation/actions/workflows/tests.yml/badge.svg)](https://github.com/otienotimothy19-prog/cancellation/actions/workflows/tests.yml)
+
 A small, standalone web app for one staff member to cancel insurance covers. You email the insurer with a stated reason, track the insurer's reply, and record the outcome. It is separate from any commission or payout system.
 
 **Stack:** Django 5.2 LTS, PostgreSQL, server-rendered templates (a few lines of plain JS, no build step), **Zoho Mail** for email (SMTP to send, IMAP to read replies), and S3-compatible object storage (DigitalOcean Spaces). All configuration comes from environment variables. Postmark and Mailgun are also supported as alternatives.
@@ -23,6 +25,7 @@ A small, standalone web app for one staff member to cancel insurance covers. You
 ```
 DRAFT ──send──▶ SENT ──staff review──▶ CONFIRMED | REJECTED | QUERY ──▶ CLOSED
                                               QUERY ──▶ CONFIRMED | REJECTED
+                                              QUERY ──reply to insurer──▶ SENT (SLA restarts)
 SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (cleared by a reply)
 ```
 
@@ -41,6 +44,12 @@ SENT + no reply past the SLA ──▶ reminder email ──▶ STALE flag (clea
 
    The app never guesses. Anything unmatched or ambiguous goes to the **Unmatched inbox**, where you link it to a case by hand or dismiss it. Every email and attachment is stored on the case.
 4. **Confirm.** You review each reply and mark it Confirmed, Rejected, Query or Information only. **Nothing is ever confirmed automatically.**
+   **Answering a query.** When you mark a reply as a Query, the case page shows a **Reply to the insurer** form. The message comes prefilled with the reference and a quote of the insurer's question. You can attach documents already on the case and/or upload a new one. The reply:
+   - goes to whoever raised the query, with the insurer's cancellation address and CC list copied in
+   - is threaded with `In-Reply-To`/`References`, and keeps the reference in the subject and the same plus Reply-To, so the insurer's next answer matches automatically
+   - moves the case back to **SENT** and restarts the SLA clock (`last_sent_at`), while `sent_at` keeps the original request time
+
+   As with the first request, a provider error sends nothing, leaves the case in QUERY and logs `SEND_FAILED`.
 5. **On CONFIRMED,** the review form asks for the **effective date the insurer confirmed**. It defaults to the requested date and must fall inside the cover period. The app then:
    - records the **pro-rata refund of unearned premium**, and shows the working in the audit log
    - marks the **cover CANCELLED**
@@ -176,12 +185,15 @@ To read real replies locally, set `MAILBOX_PASSWORD` (see [Zoho Mail setup](#zoh
 python manage.py test cancellations --settings=config.settings_test
 ```
 
+**CI:** `.github/workflows/tests.yml` runs on every push and pull request. It checks that migrations are up to date, runs the migrations and the whole suite against **PostgreSQL 16**, then runs Django's deploy checks. This is the only place the Postgres-specific parts run, including the append-only trigger, so keep it green before deploying.
+
 The test settings use SQLite, the in-memory mail backend and a fake IMAP server, so they need no environment variables and no network. To run the tests against Postgres, set `DATABASE_URL` first. The suite covers:
 
 - each of the four matching methods, plus the unmatched and ambiguous cases
 - sender verification, including spoofed display names and forged auth headers
 - IMAP polling: only new UIDs are fetched, a UIDVALIDITY reset is handled, a failing message is retried then skipped, and fetches never mark mail as read
 - send-blocking validation
+- follow-ups to insurer queries: recipients, threading headers, attachments, return to SENT, SLA restart, the next reply matched by thread, send failure leaves QUERY
 - the refund calculation (mid-term, inception, last day, after expiry, leap year, rounding) and the confirm flow: cover cancelled, certificate from an attachment or an upload, close blocked without a certificate
 - SLA: no action before the deadline, one reminder, the STALE flag after the grace period, a reply clears it, a failed send is retried, the per-insurer SLA
 - the CSV export and the JSON API: auth, filters, pagination, formula neutralising
