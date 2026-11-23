@@ -20,7 +20,7 @@ ITEM = {
     "ref": "IMR-00042", "status": "Approved", "insuredName": "Peter Otieno", "phone": "0712***678", "email": "p***@x.test",
     "vehicleRegistration": "KDA 123A", "chassisNumber": "XYZ", "insurer": "Acme Insurance Ltd",
     "policyNumber": "MTR-777", "certificateNumber": "C1234567", "coverType": "Comprehensive",
-    "startDate": "2026-01-01", "expiryDate": "2026-12-31T00:00:00Z", "cancelled": False,
+    "startDate": "2026-01-01", "expiryDate": "2099-12-31T00:00:00Z", "cancelled": False,
 }
 
 
@@ -59,7 +59,7 @@ class PortalSearchTests(TestCase):
         self.assertEqual(item["certificate_number"], "C1234567")
         self.assertEqual(item["vehicle_reg"], "KDA 123A")
         self.assertEqual(item["insurer_id"], self.insurer.pk)  # "Acme Insurance Ltd" -> Acme Insurance
-        self.assertEqual((item["start_date"], item["end_date"]), ("2026-01-01", "2026-12-31"))
+        self.assertEqual((item["start_date"], item["end_date"]), ("2026-01-01", "2099-12-31"))
         self.assertNotIn("phone", item)  # contact details never pass through
         request = m.call_args.args[0]
         self.assertEqual(request.full_url, "https://portal.test/api/underwriting/v1/records?by=registration&q=KDA123A")
@@ -110,6 +110,22 @@ class PortalSearchTests(TestCase):
         self.assertIsNone(case.refund_amount)
         self.assertIn("Certificate no.: C1234567", render_email(case)[1])
         self.assertContains(self.client.get(case.get_absolute_url()), "IMR-00042")
+
+
+    def test_only_active_covers_are_listed(self):
+        from cancellations.models import Cover
+
+        items = [
+            {**ITEM, "ref": "IMR-1"},                                              # active
+            {**ITEM, "ref": "IMR-2", "expiryDate": "2020-01-31"},                  # expired
+            {**ITEM, "ref": "IMR-3", "cancelled": True, "status": "Cancelled"},    # cancelled in the portal
+            {**ITEM, "ref": "IMR-4", "policyNumber": "DONE-1"},                     # already cancelled here
+            {**ITEM, "ref": "IMR-5", "expiryDate": None},                          # no expiry recorded: kept
+        ]
+        make_cover(self.insurer, policy_number="DONE-1", status=Cover.Status.CANCELLED)
+        data, _ = self.get(items=items)
+        self.assertEqual([i["ref"] for i in data["items"]], ["IMR-1", "IMR-5"])
+        self.assertEqual(data["hidden"], 3)
 
 
 class PortalDisabledTests(TestCase):

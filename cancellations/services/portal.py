@@ -16,6 +16,7 @@ import urllib.request
 from datetime import date
 
 from django.conf import settings
+from django.utils import timezone
 
 from ..models import Cover, Insurer
 
@@ -95,8 +96,18 @@ def match_insurer(portal_name, insurers=None):
     return close[0] if len(close) == 1 else None
 
 
+def is_active(item, today=None):
+    """Only a cover that is still in force can be cancelled: not cancelled (in the portal or here) and not expired."""
+    today = (today or timezone.localdate()).isoformat()
+    if item["cancelled_in_portal"] or item["portal_status"] == "Cancelled":
+        return False
+    if item["existing_cover_id"] and not item["existing_cover_active"]:
+        return False
+    return not (item["end_date"] and item["end_date"] < today)
+
+
 def search(by, term, staff_email):
-    """Search the portal. Returns a list of dicts ready for the New Cancellation form."""
+    """Search the portal. Returns (active covers ready for the New Cancellation form, number hidden as not active)."""
     if not enabled():
         raise PortalError("The Production Portal is not connected.")
     if by not in SEARCH_BY:
@@ -131,4 +142,5 @@ def search(by, term, staff_email):
             "existing_cover_id": existing.pk if existing else None,
             "existing_cover_active": bool(existing and existing.status == Cover.Status.ACTIVE),
         })
-    return results
+    active = [r for r in results if is_active(r)]
+    return active, len(results) - len(active)

@@ -207,10 +207,10 @@ def case_create(request):
 def portal_search(request):
     """JSON: certificate records from the Production Portal for the New Cancellation form (read-only)."""
     try:
-        items = portal.search(request.GET.get("by", ""), request.GET.get("q", ""), request.user.email)
+        items, hidden = portal.search(request.GET.get("by", ""), request.GET.get("q", ""), request.user.email)
     except portal.PortalError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=200)
-    return JsonResponse({"ok": True, "items": items})
+    return JsonResponse({"ok": True, "items": items, "hidden": hidden})
 
 
 @require_POST

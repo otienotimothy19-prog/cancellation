@@ -223,7 +223,6 @@
       const notes = ["Filled in from portal record " + item.ref + "."];
       if (!item.insurer_id) notes.push(`Insurer “${item.insurer_name || "unknown"}” isn't set up here: choose it, or add it under Insurers first.`);
       if (!item.policy_number) notes.push("The record has no policy number: enter it.");
-      if (item.existing_cover_id && !item.existing_cover_active) notes.push("This policy is already marked cancelled here.");
       status.textContent = notes.join(" ");
       q("case-reason_code").focus();
     }
@@ -238,8 +237,7 @@
                        item.start_date && item.end_date && item.start_date + " → " + item.end_date].filter(Boolean);
         main.append(el("div", "cell-sub", facts.join(" · ")));
         const tags = el("div", "portal-result__tags");
-        if (item.cancelled_in_portal) tags.append(el("span", "badge badge--danger", "Cancelled in portal"));
-        if (item.existing_cover_id) tags.append(el("span", "badge badge--info", item.existing_cover_active ? "Already on file" : "Already cancelled here"));
+        if (item.existing_cover_id) tags.append(el("span", "badge badge--info", "Already on file"));
         if (!item.insurer_id) tags.append(el("span", "badge badge--warning", "Insurer not set up"));
         if (tags.childElementCount) main.append(tags);
         const btn = el("button", "btn btn-primary btn-sm", "Use this");
@@ -262,7 +260,10 @@
         const data = await res.json();
         if (!data.ok) { render([]); status.textContent = data.error; return; }
         render(data.items);
-        status.textContent = data.items.length ? `${data.items.length} record${data.items.length === 1 ? "" : "s"} found. Choose the cover to cancel.` : "No matching certificate in the Production Portal.";
+        const hidden = data.hidden ? ` ${data.hidden} expired or cancelled cover${data.hidden === 1 ? " is" : "s are"} not shown.` : "";
+        status.textContent = (data.items.length
+          ? `${data.items.length} active cover${data.items.length === 1 ? "" : "s"} found. Choose the one to cancel.`
+          : "No active cover found in the Production Portal.") + hidden;
       } catch (e) {
         render([]);
         status.textContent = "Search failed. Check your connection and try again.";
