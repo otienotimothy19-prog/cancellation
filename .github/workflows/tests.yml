@@ -29,6 +29,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Build step works without secrets (as on DigitalOcean)
+        env:
+          EMAIL_PROVIDER: zoho
+        run: env -u SECRET_KEY -u MAILBOX_PASSWORD -u DATABASE_URL python manage.py collectstatic --noinput
       - name: Migrations are up to date
         run: python manage.py makemigrations --check --dry-run --settings=config.settings_test
       - name: Migrate (includes the append-only trigger on Postgres)

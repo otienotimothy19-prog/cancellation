@@ -5,6 +5,7 @@ All configuration comes from environment variables (see .env.example and README)
 """
 
 import os
+import sys
 from pathlib import Path
 
 import dj_database_url
@@ -12,10 +13,17 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# The build step (`manage.py collectstatic`, run automatically by the DigitalOcean/Heroku Python
+# buildpack) only copies static files. It must work without runtime secrets, which App Platform
+# usually provides at run time only. Every other command and the web server still require them.
+BUILD_STEP = len(sys.argv) > 1 and sys.argv[1] == "collectstatic"
+
 
 def env(name, default=None, required=False):
     value = os.environ.get(name, default)
     if required and not value:
+        if BUILD_STEP:
+            return f"build-step-placeholder-{name.lower()}"
         raise ImproperlyConfigured(f"Environment variable {name} is required")
     return value
 
