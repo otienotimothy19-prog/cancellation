@@ -12,7 +12,7 @@ from cancellations.models import CancellationCase
 from cancellations.services import portal
 from cancellations.services.sending import render_email
 
-from .factories import make_cover, make_insurer, make_user, pdf_upload
+from .factories import COVER_END, COVER_START, make_cover, make_insurer, make_user, pdf_upload
 
 PORTAL = {"PRODUCTION_PORTAL_URL": "https://portal.test", "PRODUCTION_PORTAL_TOKEN": "t" * 40}
 
@@ -101,7 +101,7 @@ class PortalSearchTests(TestCase):
         self.client.post(reverse("cancellations:case_create"), {
             "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
             "cover-asset_reference": "KDA 123A", "cover-certificate_number": "C1234567", "cover-portal_ref": "IMR-00042",
-            "cover-start_date": "2026-01-01", "cover-end_date": "2026-12-31",  # dates without premium: allowed
+            "cover-start_date": COVER_START, "cover-end_date": COVER_END,  # dates without premium: allowed
             "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
             "doc-doc_type": "SIGNED_REQUEST", "doc-source": "client", "doc-file": pdf_upload(), "action": "draft",
         })

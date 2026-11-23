@@ -13,6 +13,11 @@ from cancellations.services.workflow import S
 
 PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 # Headers the receiving provider stamps for an authenticated sender.
+# A cover period around today, for create-form posts: the locked effective date is "today".
+_TODAY = dt.date.today()
+COVER_START = (_TODAY - dt.timedelta(days=180)).isoformat()
+COVER_END = (_TODAY + dt.timedelta(days=180)).isoformat()
+
 AUTH_PASS = {"Authentication-Results": "mx.provider.test; spf=pass; dkim=pass; dmarc=pass header.from=insurer.test"}
 
 

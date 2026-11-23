@@ -8,7 +8,7 @@ from cancellations.models import CancellationCase
 from cancellations.services.inbound import ingest
 from cancellations.services.workflow import S
 
-from .factories import inbound, make_insurer, make_sent_case, make_user, pdf_upload
+from .factories import COVER_END, COVER_START, inbound, make_insurer, make_sent_case, make_user, pdf_upload
 
 
 class SaveAndSendTests(TestCase):
@@ -20,8 +20,8 @@ class SaveAndSendTests(TestCase):
     def data(self, **overrides):
         d = {
             "cover-client_name": "Peter Otieno", "cover-certificate_number": "CMTR-777", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
-            "cover-asset_reference": "KCB 777Z", "cover-premium": "48000", "cover-start_date": "2026-01-01",
-            "cover-end_date": "2026-12-31", "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
+            "cover-asset_reference": "KCB 777Z", "cover-premium": "48000", "cover-start_date": COVER_START,
+            "cover-end_date": COVER_END, "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
             "doc-doc_type": "SIGNED_REQUEST", "doc-source": "client",
         }
         d.update(overrides)
@@ -59,7 +59,9 @@ class SaveAndSendTests(TestCase):
         self.assertEqual(res["to"], "cancel@insurer.test")
         self.assertEqual(res["cc"], ["ops@insurer.test"])
         self.assertIn("MTR-777", res["subject"])
-        for text in ("Peter Otieno", "MTR-777", "KCB 777Z", "Client request", "01 July 2026"):
+        from django.utils import timezone
+
+        for text in ("Peter Otieno", "MTR-777", "KCB 777Z", "Client request", f"{timezone.localdate():%d %B %Y}"):
             self.assertIn(text, res["body"])
         self.assertFalse(CancellationCase.objects.exists())
         self.assertEqual(len(mail.outbox), 0)
@@ -82,7 +84,8 @@ class SaveAndSendTests(TestCase):
         joined = " ".join(res["problems"])
         self.assertIn("Required for a new cover", joined)  # cover section
         self.assertIn("Select a valid choice", joined)  # case section, reported in the same pass
-        res = self.preview(**{"case-effective_date": "2027-06-01"})
+        # The locked effective date (today) is still checked against the cover period.
+        res = self.preview(**{"cover-start_date": "2020-01-01", "cover-end_date": "2020-12-31"})
         self.assertIn("within the cover period", " ".join(res["problems"]))
 
     def test_preview_requires_role(self):
@@ -144,10 +147,20 @@ class SimplifiedFormTests(TestCase):
             "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01", "case-effective_time": "14:30",
             "doc-doc_type": "SIGNED_REQUEST", "doc-file": pdf_upload(), "action": "draft",
         })
+        # Locked: the posted 2026-07-01 14:30 is ignored; the server's "now" is stored instead.
+        from django.utils import timezone
+
         case = CancellationCase.objects.get()
-        self.assertEqual(case.effective_time, dt.time(14, 30))
-        self.assertIn("Effective date:  01 July 2026 at 14:30", render_email(case)[1])
-        self.assertContains(self.client.get(case.get_absolute_url()), "01 Jul 2026 at 14:30")
+        now = timezone.localtime()
+        self.assertEqual(case.effective_date, now.date())
+        self.assertNotEqual(case.effective_time, dt.time(14, 30))
+        self.assertLess(abs((dt.datetime.combine(now.date(), case.effective_time) - now.replace(tzinfo=None)).total_seconds()), 120)
+        when = f"{case.effective_date:%d %B %Y} at {case.effective_time:%H:%M}"
+        self.assertIn(f"Effective date:  {when}", render_email(case)[1])
+        r = self.client.get(reverse("cancellations:case_create"))
+        self.assertContains(r, 'name="case-effective_date"')
+        self.assertIn("disabled", str(r.context["case_form"]["effective_date"]))
+        self.assertIn("disabled", str(r.context["case_form"]["effective_time"]))
 
 
 class CertificateFirstTests(TestCase):

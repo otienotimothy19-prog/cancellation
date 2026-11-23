@@ -143,10 +143,7 @@ def _bind_create_forms(request):
     """Bind and validate the three create-form parts. Returns (forms, cover_or_None, error_or_None)."""
     cover_form = CoverChoiceForm(request.POST or None, prefix="cover")
     doc_form = DocumentForm(request.POST or None, request.FILES or None, prefix="doc")
-    # The effective date and time start as now (when the request is made); staff can change them.
-    now = timezone.localtime()
-    case_form = CaseForm(request.POST or None, prefix="case",
-                         initial={"effective_date": now.date(), "effective_time": now.time().replace(second=0, microsecond=0)})
+    case_form = CaseForm(request.POST or None, prefix="case")  # effective date/time: locked to "now" (see CaseForm)
     forms_ = {"cover_form": cover_form, "case_form": case_form, "doc_form": doc_form}
     if request.method != "POST":
         return forms_, None, None
@@ -199,7 +196,7 @@ def case_create(request):
         return redirect(case)
     return render(request, "cancellations/case_form.html", {
         **forms_, "reason_meta": _reason_meta(), "creating": True, **_upload_limits(),
-        "effective_help": "Filled in with the date and time now. Change them if the cover should end at another time.",
+        "effective_help": "Set automatically to the date and time the request is saved.",
         "portal_enabled": portal.enabled(), "portal_search_by": portal.SEARCH_BY,
     })
 

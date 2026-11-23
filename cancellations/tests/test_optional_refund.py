@@ -11,7 +11,7 @@ from cancellations.services.inbound import ingest
 from cancellations.services.sending import render_email
 from cancellations.services.workflow import S, review_inbound_email
 
-from .factories import inbound, make_cover, make_insurer, make_sent_case, make_user, pdf_upload
+from .factories import COVER_END, COVER_START, inbound, make_cover, make_insurer, make_sent_case, make_user, pdf_upload
 
 TOKEN = "test-token-commission"
 
@@ -49,7 +49,7 @@ class OptionalRefundFieldsTests(TestCase):
 
     def test_all_three_still_work(self):
         r = self.client.post(reverse("cancellations:case_create"), {
-            **self.data(), "cover-premium": "48000", "cover-start_date": "2026-01-01", "cover-end_date": "2026-12-31",
+            **self.data(), "cover-premium": "48000", "cover-start_date": COVER_START, "cover-end_date": COVER_END,
             "action": "draft"})
         self.assertEqual(r.status_code, 302)
         self.assertTrue(CancellationCase.objects.get().cover.can_calculate_refund)

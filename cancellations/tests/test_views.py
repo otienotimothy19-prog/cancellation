@@ -7,7 +7,7 @@ from cancellations.models import CancellationCase, Cover
 from cancellations.services.documents import validate_file
 from cancellations.services.workflow import S
 
-from .factories import PDF, make_case, make_insurer, make_user, pdf_upload
+from .factories import COVER_END, COVER_START, PDF, make_case, make_insurer, make_user, pdf_upload
 
 
 class AccessTests(TestCase):
@@ -42,8 +42,8 @@ class CreateAndSendFlowTests(TestCase):
     def post_create(self, **overrides):
         data = {
             "cover-client_name": "Peter Otieno", "cover-certificate_number": "CMTR-777", "cover-policy_number": "MTR-777", "cover-insurer": self.insurer.pk,
-            "cover-asset_reference": "KCB 777Z", "cover-premium": "48000", "cover-start_date": "2026-01-01",
-            "cover-end_date": "2026-12-31", "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
+            "cover-asset_reference": "KCB 777Z", "cover-premium": "48000", "cover-start_date": COVER_START,
+            "cover-end_date": COVER_END, "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
             "doc-doc_type": "SIGNED_REQUEST", "doc-source": "client", "doc-file": pdf_upload(),
         }
         data.update(overrides)
@@ -74,7 +74,7 @@ class CreateAndSendFlowTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_effective_date_outside_cover_rejected(self):
-        r = self.post_create(**{"case-effective_date": "2027-03-01"})
+        r = self.post_create(**{"cover-start_date": "2020-01-01", "cover-end_date": "2020-12-31"})  # today is outside it
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "within the cover period")
         self.assertFalse(CancellationCase.objects.exists())

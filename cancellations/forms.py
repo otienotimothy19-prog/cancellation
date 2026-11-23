@@ -2,6 +2,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.template import Context, Template, TemplateSyntaxError
+from django.utils import timezone
 
 from .models import CancellationCase, CaseDocument, Cover, Insurer, split_addresses
 from .reasons import REASON_CHOICES, DocType
@@ -84,9 +85,19 @@ class CaseForm(forms.ModelForm):
         }
         labels = {"reason_note": "Reason note (optional)"}
 
+    LOCKED = ("effective_date", "effective_time")
+
     def __init__(self, *args, cover=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.cover = cover or (self.instance.cover if self.instance.cover_id else None)
+        # The effective date and time are locked: a new request takes the moment it is saved (server clock),
+        # and a draft keeps the values it was created with. Anything the browser posts for them is ignored.
+        if not self.instance.pk:
+            now = timezone.localtime()
+            self.initial["effective_date"] = now.date()
+            self.initial["effective_time"] = now.time().replace(second=0, microsecond=0)
+        for name in self.LOCKED:
+            self.fields[name].disabled = True
 
     def clean_effective_date(self):
         value = self.cleaned_data.get("effective_date")
