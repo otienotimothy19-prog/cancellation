@@ -2,5 +2,9 @@ from django.apps import AppConfig
 
 
 class CancellationsConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'cancellations'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "cancellations"
+    verbose_name = "IMOTH Cancellations"
+
+    def ready(self):
+        from . import receivers  # noqa: F401
