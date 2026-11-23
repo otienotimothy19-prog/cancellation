@@ -164,6 +164,13 @@ class SenderVerificationTests(TestCase):
         self.assertIsNone(email.case)
         self.assertIn("SPF failed", email.match_note)
 
+    def test_forged_lower_header_with_our_authserv_id_is_ignored(self):
+        email, _ = ingest(inbound(
+            subject=f"Re: {self.case.reference}",
+            headers={"Authentication-Results": "mx.provider.test; dmarc=none\nmx.provider.test; dmarc=pass"},
+        ))
+        self.assertIsNone(email.case)
+
     def test_auth_results_from_other_servers_are_ignored(self):
         email, _ = ingest(inbound(
             subject=f"Re: {self.case.reference}",

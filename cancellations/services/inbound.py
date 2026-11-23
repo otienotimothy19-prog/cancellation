@@ -212,9 +212,12 @@ PROVIDER_SPF_HEADERS = {"postmark": "Received-SPF", "mailgun": "X-Mailgun-Spf"}
 def _trusted_auth_results(msg):
     """Authentication-Results headers written by our own receiving server (matching authserv-id)."""
     servid = (getattr(settings, "INBOUND_AUTHSERV_ID", "") or "").strip().lower()
-    if not servid:
+    top = _first(msg, "Authentication-Results")
+    # Only the topmost header, and only if our server wrote it: lower copies (even ones
+    # claiming our authserv-id) may have been supplied by the sender.
+    if not servid or top.split(";", 1)[0].strip().lower() != servid:
         return []
-    return [v for v in _header_values(msg, "Authentication-Results") if v.split(";", 1)[0].strip().lower() == servid]
+    return [top]
 
 
 def sender_authentication(msg):
