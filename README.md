@@ -2,7 +2,7 @@
 
 A small, standalone web app for one staff member to cancel insurance covers. You email the insurer with a stated reason, track the insurer's reply, and record the outcome. It is separate from any commission or payout system.
 
-**Stack:** Django 5.2 LTS, PostgreSQL, server-rendered templates (a few lines of plain JS, no build step), django-anymail (Postmark or Mailgun), and S3-compatible object storage (DigitalOcean Spaces). All configuration comes from environment variables.
+**Stack:** Django 5.2 LTS, PostgreSQL, server-rendered templates (a few lines of plain JS, no build step), **Zoho Mail** for email (SMTP to send, IMAP to read replies), and S3-compatible object storage (DigitalOcean Spaces). All configuration comes from environment variables. Postmark and Mailgun are also supported as alternatives.
 
 ## Contents
 
@@ -10,8 +10,9 @@ A small, standalone web app for one staff member to cancel insurance covers. You
 - [Local setup](#local-setup)
 - [Running tests](#running-tests)
 - [Users and the cancellations role](#users-and-the-cancellations-role)
-- [Email provider setup](#email-provider-setup)
-- [DNS records (SPF, DKIM, DMARC, MX)](#dns-records-spf-dkim-dmarc-mx)
+- [Zoho Mail setup](#zoho-mail-setup)
+- [DNS records (SPF, DKIM, DMARC)](#dns-records-spf-dkim-dmarc)
+- [Alternative providers: Postmark or Mailgun](#alternative-providers-postmark-or-mailgun)
 - [Environment variables](#environment-variables)
 - [Deploying to DigitalOcean App Platform](#deploying-to-digitalocean-app-platform)
 
@@ -26,37 +27,38 @@ DRAFT ──send──▶ SENT ──staff review──▶ CONFIRMED | REJECTED 
 ```
 
 1. **Create.** You pick an existing cover or enter a new one (client, policy number, insurer, vehicle/asset, premium, dates). You also choose a reason code, set the effective date (it must fall inside the cover period) and attach the supporting document. The case is saved as **DRAFT**. A cover can have only one open case.
-2. **Send.** The app renders the insurer's own template, or the default one. The email goes to the insurer's cancellation address, with the insurer's CC list copied in and the case documents attached. Each email carries:
+2. **Send.** The app renders the insurer's own template, or the default one. It sends from `cancellation@imoth.co.ke` to the insurer's cancellation address, with the insurer's CC list copied in and **all** the case's client and staff documents attached. Each email carries:
    - the subject `Cancellation request IMOTH-CXL-000123 – Policy … – Client`
-   - a `Reply-To` of `cancellations+CXL000123@<MAIL_DOMAIN>`
+   - a `Reply-To` of `cancellation+CXL000123@imoth.co.ke`
    - a unique `Message-ID`, which is stored on the case
 
-   Sending is **blocked** when any of these is missing: the reason, the effective date, a field the reason needs, a document the reason needs, or the insurer's signed form when that insurer requires one. The database records are written first and the email is sent last, all in one transaction. If the provider fails, everything rolls back, the case stays DRAFT and a `SEND_FAILED` event is logged.
-3. **Track.** Replies come in through the provider's inbound webhook. The app tries to match each one to a case, in this order:
-   1. the plus address `cancellations+CXL000123@…` in To, Cc or the envelope recipient
+   Sending is **blocked** when any of these is missing: the reason, the effective date, a field the reason needs, a document the reason needs, or the insurer's signed form when that insurer requires one. The database records are written first and the email is sent last, all in one transaction. If sending fails, everything rolls back, the case stays DRAFT and a `SEND_FAILED` event is logged.
+3. **Track.** A background worker (`manage.py poll_mailbox --loop`) reads new mail from `cancellation@imoth.co.ke` over IMAP every minute. It opens the mailbox **read-only**, so messages you haven't read in Zoho stay unread. The app tries to match each reply to a case, in this order:
+   1. the plus address `cancellation+CXL000123@…` in To, Cc or Delivered-To
    2. the reference `IMOTH-CXL-000123` in the subject
-   3. `In-Reply-To` or `References` pointing at a Message-ID we sent (ours or the provider's)
+   3. `In-Reply-To` or `References` pointing at a Message-ID we sent
    4. the policy number in the body, but only when exactly **one** open (SENT/QUERY) case has that number
 
-   The app never guesses. Anything unmatched or ambiguous goes to the **Unmatched inbox**, where you link it to a case by hand or dismiss it. Every email and attachment is stored.
+   The app never guesses. Anything unmatched or ambiguous goes to the **Unmatched inbox**, where you link it to a case by hand or dismiss it. Every email and attachment is stored on the case.
 4. **Confirm.** You review each reply and mark it Confirmed, Rejected, Query or Information only. **Nothing is ever confirmed automatically.**
 
 **Sender verification.** A matched reply is attached to its case only when both of these are true:
 
 - the parsed `From` address is one of the insurer's known addresses: its cancellation email, its CC list, or an entry in *known sender addresses* (a full address or `@domain`)
-- the receiving provider recorded an SPF or DMARC **pass** for it
+- Zoho's receiving server recorded an SPF or DMARC **pass** for it
 
 A reply that fails either check goes to the Unmatched inbox, with the likely case shown as a suggestion. To link an unknown sender by hand, you have to tick "I have checked this sender".
 
-Authentication results are read only from headers the provider writes:
+Authentication results come only from the verdict Zoho's receiving server stamps on the message:
 
-- the **topmost** `Authentication-Results`, and only when its authserv-id equals `INBOUND_AUTHSERV_ID`
-- Postmark's `Received-SPF`
-- Mailgun's `X-Mailgun-Spf`
+- the app reads the **topmost** `Authentication-Results` header (configurable via `INBOUND_AUTH_HEADER`)
+- it uses that header only when the authserv-id is `mx.zohomail.com` (`INBOUND_AUTHSERV_ID`)
 
-Any fail or softfail rejects the reply.
+A sender can't place a header above Zoho's, so lower copies are ignored. A pass means DMARC passed, or SPF passed for an envelope sender aligned with the From domain. Any fail or softfail rejects the reply.
 
-**Idempotency.** `case_email.message_id` is unique. When an email has no `Message-ID`, the key falls back to the provider's ID or a hash of the content. If the same email is delivered twice, the second copy is ignored and no duplicate documents or events are created.
+**Why the strict check stays on.** A confirmation leads to a refund and a cancelled cover, and a From address on its own is trivial to fake. If the check fails, the reply simply waits in the Unmatched inbox with the right case suggested, and you link it in one click. `INBOUND_REQUIRE_SENDER_AUTH=false` turns it off, but that isn't recommended.
+
+**Idempotency.** `case_email.message_id` is unique. When an email has no `Message-ID`, the key falls back to a hash of the content. If the same email is read twice (a retry, a crash, or Zoho renumbering the folder), the second copy is ignored and no duplicate documents or events are created. Polling progress is stored per folder by IMAP UID. A message that fails 3 polls in a row is skipped, and the error is shown on the Unmatched inbox page.
 
 **Audit log.** `case_event` is append-only. The model refuses updates and deletes, and so does a database trigger (Postgres and SQLite), which also blocks `QuerySet.update()` and `delete()`. The log records every create, edit, document upload, send, send failure, received email, manual link, review decision and close.
 
@@ -108,7 +110,8 @@ $env:DEBUG = "true"
 $env:SECRET_KEY = "dev-only-secret"
 $env:DATABASE_URL = "postgres://imoth:imoth@localhost:5432/imoth_cancellations"
 $env:EMAIL_PROVIDER = "console"      # outgoing mail is printed to the terminal
-$env:MAIL_DOMAIN = "example.com"
+$env:MAIL_DOMAIN = "imoth.co.ke"
+$env:CANCELLATIONS_MAILBOX = "cancellation"
 ```
 
 Then migrate, create a user, give them the role, and run:
@@ -122,7 +125,7 @@ python manage.py runserver
 
 Open http://127.0.0.1:8000/admin/ and add at least one **Insurer** (name, cancellation email, CC list, known sender addresses, SLA hours, template). Then use the app at http://127.0.0.1:8000/.
 
-To try inbound matching locally, POST a Postmark-style JSON payload to `http://127.0.0.1:8000/email/postmark/inbound/` with Basic auth matching `INBOUND_WEBHOOK_SECRET`. `cancellations/tests/test_idempotency.py` has an example payload.
+To read real replies locally, set `MAILBOX_PASSWORD` (see [Zoho Mail setup](#zoho-mail-setup)) and run `python manage.py poll_mailbox`. It reads the live mailbox read-only. `cancellations/tests/test_mailbox.py` shows sample raw messages.
 
 ## Running tests
 
@@ -130,12 +133,13 @@ To try inbound matching locally, POST a Postmark-style JSON payload to `http://1
 python manage.py test cancellations --settings=config.settings_test
 ```
 
-The test settings use SQLite and the in-memory mail backend, so they need no environment variables and no network. To run the tests against Postgres, set `DATABASE_URL` first. The suite covers:
+The test settings use SQLite, the in-memory mail backend and a fake IMAP server, so they need no environment variables and no network. To run the tests against Postgres, set `DATABASE_URL` first. The suite covers:
 
 - each of the four matching methods, plus the unmatched and ambiguous cases
 - sender verification, including spoofed display names and forged auth headers
+- IMAP polling: only new UIDs are fetched, a UIDVALIDITY reset is handled, a failing message is retried then skipped, and fetches never mark mail as read
 - send-blocking validation
-- idempotency, including a real Postmark webhook delivered twice
+- idempotency, at both the IMAP and webhook level
 - status transitions (every disallowed pair is tested)
 - the append-only trigger
 - uploads and the role check
@@ -149,31 +153,24 @@ The test settings use SQLite and the in-memory mail backend, so they need no env
 
 ---
 
-## Email provider setup
+## Zoho Mail setup
 
-The app works with **either** Postmark or Mailgun, chosen by `EMAIL_PROVIDER`. Both send through their API and receive replies through an inbound webhook that django-anymail parses. The webhook is protected by HTTP Basic auth (`INBOUND_WEBHOOK_SECRET="user:password"`). Mailgun webhooks are also signature-checked.
+The app logs in to the mailbox **`cancellation@imoth.co.ke`**. It sends through SMTP and reads replies over IMAP. Because the domain already receives mail at Zoho, **no MX change is needed**.
 
-> **Recommended:** use a dedicated sub-domain such as `cxl.imoth.co.ke` for `MAIL_DOMAIN`. You can point its MX records at the provider without touching your normal company mailboxes.
+1. **Enable IMAP** for the mailbox: Zoho Mail → Settings → Mail Accounts → IMAP Access → enable.
+2. **Create an app-specific password.** This is required when two-factor authentication is on, and recommended either way. Zoho Accounts → Security → App Passwords → generate one called "IMOTH Cancellations". Put it in `MAILBOX_PASSWORD`. The app never uses the account's real password.
+3. **Check that plus addressing reaches the mailbox.** From an outside address, send a test email to `cancellation+test@imoth.co.ke`. It should land in the inbox. If it doesn't, replies still match by the reference in the subject and by thread headers, but the Reply-To should then be changed to the plain mailbox. That's a code change to discuss first.
+4. **Use the servers for your Zoho data centre.** Organisation (custom-domain) accounts use `smtppro.zoho.com` and `imappro.zoho.com`. If your Zoho admin URL ends in `.eu`, `.in` or `.com.au`, use the matching host, e.g. `smtppro.zoho.eu`. SMTP uses port 465 (SSL) or 587 (STARTTLS); IMAP uses 993.
+5. **Confirm the sender-check settings against real mail.** Ask someone outside IMOTH to reply to a test message, then run:
 
-### Postmark
+   ```powershell
+   python manage.py check_mailbox --count 3
+   ```
 
-1. Create a Server. Copy its **Server API token** into `POSTMARK_SERVER_TOKEN`.
-2. **Sender Signatures → Add Domain** for `MAIL_DOMAIN`. Add the DKIM and Return-Path records it shows (see [DNS](#dns-records-spf-dkim-dmarc-mx)).
-3. **Default Inbound Stream → Settings:**
-   - **Inbound webhook URL:** `https://webhookuser:long-random-password@<your-app-host>/email/postmark/inbound/`. The credentials must match `INBOUND_WEBHOOK_SECRET`.
-   - **Inbound domain:** `MAIL_DOMAIN`. Then add `MX 10 inbound.postmarkapp.com` for that domain.
-   - Turn on "Include raw email content in JSON payload" if you can. Headers are more complete that way.
-4. Send a test reply. In the stored email's headers (admin → Case emails), check for:
-   - `Received-SPF`, which Postmark adds
-   - an `Authentication-Results` header; if one is there, put the text before its first `;` into `INBOUND_AUTHSERV_ID`
+   It shows the authentication headers Zoho stamped and whether each message would count as verified. Nothing in the mailbox changes. If Zoho's verdict is in `ARC-Authentication-Results` rather than `Authentication-Results`, set `INBOUND_AUTH_HEADER=ARC-Authentication-Results`. If the authserv-id isn't `mx.zohomail.com`, set `INBOUND_AUTHSERV_ID` to what it shows.
+6. **Run the worker.** In production it's the `mail-worker` component in `.do/app.yaml`, which runs `python manage.py poll_mailbox --loop`. Run **one** instance only. A second one would be harmless, but it would duplicate the work.
 
-### Mailgun
-
-1. **Sending → Domains → Add domain** `MAIL_DOMAIN`, then add the SPF, DKIM and MX records it shows. Copy the **API key** into `MAILGUN_API_KEY` and the **HTTP webhook signing key** into `MAILGUN_WEBHOOK_SIGNING_KEY`. EU accounts also set `MAILGUN_API_URL=https://api.eu.mailgun.net/v3`.
-2. **Receiving → Create route:**
-   - Expression: `match_recipient("cancellations.*@<MAIL_DOMAIN>")`
-   - Action: `forward("https://webhookuser:long-random-password@<your-app-host>/email/mailgun/inbound_mime/")` and `stop()`
-3. Mailgun adds `X-Mailgun-Spf`, which the app trusts when `EMAIL_PROVIDER=mailgun`.
+Mailbox habits: keep insurer replies in `INBOX` (`IMAP_FOLDER`) until they appear on the case. The worker reads only that folder, so a Zoho filter that moves replies into another folder would hide them from the app. Reading, flagging or archiving later is fine, because the app keeps its own copy of each email and attachment.
 
 ### Insurer configuration
 
@@ -181,27 +178,31 @@ For each insurer, set **known sender addresses** to every address or domain its 
 
 ---
 
-## DNS records (SPF, DKIM, DMARC, MX)
+## DNS records (SPF, DKIM, DMARC)
 
-These examples use `MAIL_DOMAIN=cxl.imoth.co.ke`. Take the exact values from your provider's dashboard.
+Mail for `imoth.co.ke` already runs through Zoho, so the MX records stay as they are. What matters is that mail the app sends from `cancellation@imoth.co.ke` passes SPF, DKIM and DMARC. That way insurers' spam filters accept it, and nobody can easily forge a cancellation request in IMOTH's name. Check these in the Zoho Mail Admin Console → Domains → imoth.co.ke → Email Configuration:
 
 | Purpose | Type | Host | Value |
 |---|---|---|---|
-| SPF (Postmark) | TXT | `cxl` | `v=spf1 include:spf.mtasv.net ~all`, or rely on the Return-Path CNAME below, which Postmark uses for SPF alignment |
-| SPF (Mailgun) | TXT | `cxl` | `v=spf1 include:mailgun.org ~all` |
-| DKIM | TXT | `<selector>._domainkey.cxl` | the public key shown by the provider (e.g. `20261123pm._domainkey`, `krs._domainkey`) |
-| Return-Path (Postmark) | CNAME | `pm-bounces.cxl` | `pm.mtasv.net` |
-| DMARC | TXT | `_dmarc.cxl` | `v=DMARC1; p=none; rua=mailto:dmarc-reports@imoth.co.ke; adkim=r; aspf=r` |
-| Inbound (Postmark) | MX 10 | `cxl` | `inbound.postmarkapp.com` |
-| Inbound (Mailgun) | MX 10 | `cxl` | `mxa.mailgun.org` (EU: `mxa.eu.mailgun.org`) |
-| Inbound (Mailgun) | MX 10 | `cxl` | `mxb.mailgun.org` (EU: `mxb.eu.mailgun.org`) |
+| SPF | TXT | `@` (imoth.co.ke) | `v=spf1 include:zohomail.com ~all` (EU data centre: `include:zoho.eu`). Merge into any existing SPF record; never publish two |
+| DKIM | TXT | `<selector>._domainkey` (e.g. `zmail._domainkey`) | the public key generated in Zoho Admin → DKIM, then click **Verify** |
+| DMARC | TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc-reports@imoth.co.ke; adkim=r; aspf=r` |
+| MX | MX | `@` | unchanged: Zoho's `mx`, `mx2`, `mx3` hosts for your region |
 
-Notes:
+- Start DMARC at `p=none`, read the reports for a couple of weeks, then move to `p=quarantine` and finally `p=reject`.
+- Check the records with `nslookup -type=TXT imoth.co.ke` and `nslookup -type=TXT _dmarc.imoth.co.ke`.
+- The app sends only as `cancellation@imoth.co.ke`, the logged-in account. Zoho rejects any other From address unless it's an alias of that account.
 
-- Publish **one** SPF record per host name. If one already exists, merge the `include:`s into it.
-- Start DMARC at `p=none`. Once the reports show that all legitimate mail passes, move to `p=quarantine` and then `p=reject`. This protects insurers from spoofed cancellation requests that claim to come from you.
-- Check the setup with the provider's "Verify DNS" button, and with `nslookup -type=TXT _dmarc.cxl.imoth.co.ke`.
-- If you *must* use your main domain (`imoth.co.ke`) instead of a sub-domain, do **not** change its MX. Forward `cancellations+*` from your existing mailbox to the provider's inbound address. Plus-addressing has to survive that forwarding.
+---
+
+## Alternative providers: Postmark or Mailgun
+
+Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive replies through their inbound webhook instead of IMAP:
+
+- The webhook URL is `https://webhookuser:password@<app-host>/email/postmark/inbound/`, or `/email/mailgun/inbound_mime/` set up as a Mailgun route.
+- It is protected by `INBOUND_WEBHOOK_SECRET`.
+- These providers need their own DNS records (DKIM, Return-Path, and MX for a reply sub-domain) from the provider's dashboard.
+- Set `INBOUND_AUTHSERV_ID` to the provider's authserv-id. Postmark's `Received-SPF` or Mailgun's `X-Mailgun-Spf` is read automatically.
 
 ---
 
@@ -217,18 +218,24 @@ Notes:
 | `DB_SSL_REQUIRE` | no | `false` | `true` on DigitalOcean Managed Postgres |
 | `DB_CONN_MAX_AGE` | no | `60` | Persistent connection seconds |
 | `TIME_ZONE` | no | `Africa/Nairobi` | Display time zone |
-| `EMAIL_PROVIDER` | yes | `console` | `postmark`, `mailgun` or `console` |
-| `MAIL_DOMAIN` | yes | `example.com` | Domain for Reply-To plus addresses and Message-IDs |
-| `CANCELLATIONS_MAILBOX` | no | `cancellations` | Local part of the reply address |
-| `DEFAULT_FROM_EMAIL` | no | `IMOTH Cancellations <cancellations@MAIL_DOMAIN>` | From header |
-| `INBOUND_WEBHOOK_SECRET` | yes | – | `user:password` Basic auth on the inbound webhook |
-| `INBOUND_AUTHSERV_ID` | no | – | authserv-id of your provider's `Authentication-Results` |
+| `EMAIL_PROVIDER` | yes | `console` | `zoho` (production), `postmark`, `mailgun` or `console` |
+| `MAIL_DOMAIN` | yes | `example.com` | `imoth.co.ke`: domain for Reply-To plus addresses and Message-IDs |
+| `CANCELLATIONS_MAILBOX` | yes | `cancellations` | `cancellation`: local part of the mailbox |
+| `DEFAULT_FROM_EMAIL` | no | `IMOTH Cancellations <cancellation@imoth.co.ke>` | From header; must be the mailbox or its alias |
+| `MAILBOX_USER` | no | `CANCELLATIONS_MAILBOX@MAIL_DOMAIN` | Zoho login (SMTP and IMAP) |
+| `MAILBOX_PASSWORD` | Zoho | – | Zoho **app-specific** password |
+| `SMTP_HOST` / `SMTP_PORT` | no | `smtppro.zoho.com` / `465` | Use 587 for STARTTLS; regional host if not `.com` |
+| `IMAP_HOST` / `IMAP_PORT` | no | `imappro.zoho.com` / `993` | Regional host if not `.com` |
+| `IMAP_FOLDER` | no | `INBOX` | Folder the worker reads |
+| `IMAP_LOOKBACK_DAYS` | no | `14` | How far back to read on the first run or after a renumbering |
+| `MAIL_POLL_INTERVAL` | no | `60` | Seconds between polls |
+| `INBOUND_AUTH_HEADER` | no | `Authentication-Results` | Header carrying the receiving server's SPF/DMARC verdict |
+| `INBOUND_AUTHSERV_ID` | no | `mx.zohomail.com` with Zoho | authserv-id that header must carry |
 | `INBOUND_REQUIRE_SENDER_AUTH` | no | `true` | Require an SPF/DMARC pass before attaching a reply |
+| `INBOUND_WEBHOOK_SECRET` | Postmark/Mailgun | – | `user:password` Basic auth on the inbound webhook |
 | `POSTMARK_SERVER_TOKEN` | Postmark | – | Server API token |
-| `MAILGUN_API_KEY` | Mailgun | – | API key |
-| `MAILGUN_SENDER_DOMAIN` | no | `MAIL_DOMAIN` | Mailgun sending domain |
-| `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun | – | Webhook signing key |
-| `MAILGUN_API_URL` | no | US | `https://api.eu.mailgun.net/v3` for EU |
+| `MAILGUN_API_KEY` / `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun | – | API and webhook signing keys |
+| `MAILGUN_SENDER_DOMAIN` / `MAILGUN_API_URL` | no | `MAIL_DOMAIN` / US | EU: `https://api.eu.mailgun.net/v3` |
 | `AWS_STORAGE_BUCKET_NAME` | yes (prod) | – | Spaces bucket; when unset, files go to local disk |
 | `AWS_S3_ENDPOINT_URL` | with bucket | – | e.g. `https://fra1.digitaloceanspaces.com` |
 | `AWS_S3_REGION_NAME` | with bucket | – | e.g. `fra1` |
@@ -246,13 +253,13 @@ Notes:
 
 1. Push this repository to GitHub.
 2. Create a **private** Spaces bucket and an access key pair.
-3. Edit `.do/app.yaml`: set the repo, the domain and your values. Then run `doctl apps create --spec .do/app.yaml`, or create the app in the UI with the same settings:
-   - build: `python manage.py collectstatic --noinput`
-   - run: `gunicorn config.wsgi --bind 0.0.0.0:8080 --workers 2`
-   - a **pre-deploy job** that runs `python manage.py migrate --noinput`
+3. Edit `.do/app.yaml`: set the repo, the domain and your values. Then run `doctl apps create --spec .do/app.yaml`, or create the app in the UI with the same components:
+   - a **web** service: build `python manage.py collectstatic --noinput`, run `gunicorn config.wsgi --bind 0.0.0.0:8080 --workers 2`
+   - a **mail-worker** worker: `python manage.py poll_mailbox --loop`, with exactly 1 instance
+   - a **pre-deploy job**: `python manage.py migrate --noinput`
    - a Managed Postgres database
-4. Enter the secrets (`SECRET_KEY`, the provider token, `INBOUND_WEBHOOK_SECRET` and the Spaces keys) as encrypted env vars.
+4. Enter the secrets (`SECRET_KEY`, `MAILBOX_PASSWORD` and the Spaces keys) as encrypted env vars on both the web service and the worker.
 5. After the first deploy, open the console and run `python manage.py createsuperuser`, then `python manage.py grant_cancellations_role <username>`.
-6. Point the provider's inbound webhook at `https://<app-host>/email/postmark/inbound/` (or `/email/mailgun/inbound_mime/`). The health check is at `/healthz`.
+6. Run `python manage.py check_mailbox` in the console. It confirms the IMAP login and shows the auth headers. Then check that the Unmatched inbox page shows "Mailbox INBOX last checked … ago". The health check is at `/healthz`.
 
 App Platform's filesystem is ephemeral, so production **must** set `AWS_STORAGE_BUCKET_NAME`.

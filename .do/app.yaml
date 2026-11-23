@@ -1,49 +1,55 @@
 # DigitalOcean App Platform spec (example). Review before use:  doctl apps create --spec .do/app.yaml
+# Set SECRET_KEY, MAILBOX_PASSWORD, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as encrypted
+# values in the App Platform UI after creating the app.
 name: imoth-cancellations
 region: fra
+
+# Shared by every component (App Platform applies app-level envs to all of them).
+envs:
+  - { key: DATABASE_URL, scope: RUN_TIME, value: "${db.DATABASE_URL}" }
+  - { key: DB_SSL_REQUIRE, scope: RUN_TIME, value: "true" }
+  - { key: SECRET_KEY, scope: RUN_AND_BUILD_TIME, type: SECRET }
+  - { key: EMAIL_PROVIDER, scope: RUN_TIME, value: zoho }
+  - { key: MAIL_DOMAIN, scope: RUN_TIME, value: imoth.co.ke }
+  - { key: CANCELLATIONS_MAILBOX, scope: RUN_TIME, value: cancellation }
+  - { key: MAILBOX_PASSWORD, scope: RUN_TIME, type: SECRET }
+  - { key: SMTP_HOST, scope: RUN_TIME, value: smtppro.zoho.com }
+  - { key: IMAP_HOST, scope: RUN_TIME, value: imappro.zoho.com }
+  - { key: AWS_STORAGE_BUCKET_NAME, scope: RUN_TIME, value: imoth-cancellations }
+  - { key: AWS_S3_ENDPOINT_URL, scope: RUN_TIME, value: "https://fra1.digitaloceanspaces.com" }
+  - { key: AWS_S3_REGION_NAME, scope: RUN_TIME, value: fra1 }
+  - { key: AWS_ACCESS_KEY_ID, scope: RUN_TIME, type: SECRET }
+  - { key: AWS_SECRET_ACCESS_KEY, scope: RUN_TIME, type: SECRET }
+
 services:
   - name: web
-    github:
-      repo: YOUR_ORG/imoth-cancellations
-      branch: main
-      deploy_on_push: true
+    github: { repo: YOUR_ORG/imoth-cancellations, branch: main, deploy_on_push: true }
     environment_slug: python
     build_command: python manage.py collectstatic --noinput
     run_command: gunicorn config.wsgi --bind 0.0.0.0:8080 --workers 2 --timeout 60 --access-logfile -
     http_port: 8080
     instance_size_slug: apps-s-1vcpu-1gb
     instance_count: 1
-    health_check:
-      http_path: /healthz
+    health_check: { http_path: /healthz }
     envs:
-      - { key: DATABASE_URL, scope: RUN_TIME, value: "${db.DATABASE_URL}" }
-      - { key: DB_SSL_REQUIRE, scope: RUN_TIME, value: "true" }
-      - { key: SECRET_KEY, scope: RUN_AND_BUILD_TIME, type: SECRET }
       - { key: ALLOWED_HOSTS, scope: RUN_TIME, value: "${APP_DOMAIN}" }
       - { key: CSRF_TRUSTED_ORIGINS, scope: RUN_TIME, value: "${APP_URL}" }
-      - { key: EMAIL_PROVIDER, scope: RUN_AND_BUILD_TIME, value: postmark }
-      - { key: POSTMARK_SERVER_TOKEN, scope: RUN_AND_BUILD_TIME, type: SECRET }
-      - { key: MAIL_DOMAIN, scope: RUN_TIME, value: example.com }
-      - { key: DEFAULT_FROM_EMAIL, scope: RUN_TIME, value: "IMOTH Cancellations <cancellations@example.com>" }
-      - { key: INBOUND_WEBHOOK_SECRET, scope: RUN_TIME, type: SECRET }
-      - { key: AWS_STORAGE_BUCKET_NAME, scope: RUN_TIME, value: imoth-cancellations }
-      - { key: AWS_S3_ENDPOINT_URL, scope: RUN_TIME, value: "https://fra1.digitaloceanspaces.com" }
-      - { key: AWS_S3_REGION_NAME, scope: RUN_TIME, value: fra1 }
-      - { key: AWS_ACCESS_KEY_ID, scope: RUN_TIME, type: SECRET }
-      - { key: AWS_SECRET_ACCESS_KEY, scope: RUN_TIME, type: SECRET }
+
+workers:
+  - name: mail-worker
+    github: { repo: YOUR_ORG/imoth-cancellations, branch: main, deploy_on_push: true }
+    environment_slug: python
+    run_command: python manage.py poll_mailbox --loop
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1   # keep at exactly one
+
 jobs:
   - name: migrate
     kind: PRE_DEPLOY
-    github:
-      repo: YOUR_ORG/imoth-cancellations
-      branch: main
+    github: { repo: YOUR_ORG/imoth-cancellations, branch: main }
     environment_slug: python
     run_command: python manage.py migrate --noinput
-    envs:
-      - { key: DATABASE_URL, scope: RUN_TIME, value: "${db.DATABASE_URL}" }
-      - { key: DB_SSL_REQUIRE, scope: RUN_TIME, value: "true" }
-      - { key: SECRET_KEY, scope: RUN_AND_BUILD_TIME, type: SECRET }
-      - { key: EMAIL_PROVIDER, scope: RUN_AND_BUILD_TIME, value: console }
+
 databases:
   - name: db
     engine: PG
