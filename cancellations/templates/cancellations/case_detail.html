@@ -120,7 +120,7 @@
 <div class="card">
   <h2>Emails</h2>
   {% for e in emails %}
-    <div style="border-top:1px solid var(--line);padding:10px 0">
+    <div id="email-{{ e.pk }}" class="email-entry" style="border-top:1px solid var(--line);padding:10px 0">
       <div class="row" style="align-items:center">
         <div><strong>{% if e.direction == "OUT" %}→ {% if e.classification == "FOLLOW_UP" %}Follow-up sent{% else %}Sent{% endif %}{% else %}← Received{% endif %}</strong>
           <span class="muted">{{ e.received_at|date:"d M Y H:i" }} · {{ e.from_email }}</span></div>

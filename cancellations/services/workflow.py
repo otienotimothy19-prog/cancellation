@@ -146,7 +146,21 @@ def _confirm(case, email, actor, note, effective_date, certificate_doc, certific
     if certificate_upload is not None:
         doc = save_uploaded_document(case, certificate_upload, DocType.CERTIFICATE, "insurer", actor)
         log_event(case, "CERTIFICATE_RECORDED", actor, locked.status, locked.status, f"Uploaded {doc.original_name}")
+    close_if_complete(case, actor)
     return case
+
+
+def close_if_complete(case, actor):
+    """A confirmed case with its certificate / credit note stored needs nothing more: close it.
+
+    Returns True if the case was closed. Rejected and query cases are never closed automatically.
+    """
+    current = CancellationCase.objects.get(pk=case.pk)
+    if current.status != S.CONFIRMED or not current.has_certificate:
+        return False
+    transition(case, S.CLOSED, actor, action="CLOSED",
+               note="Closed automatically: insurer confirmed and certificate / credit note stored.")
+    return True
 
 
 def note_reply_received(case, email):

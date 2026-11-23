@@ -3,7 +3,7 @@
 <div class="row" style="align-items:center;margin-bottom:12px">
   <h1 style="margin:0">Cancellation cases</h1>
   <div style="text-align:right">
-    {% if to_review %}<span class="badge s-QUERY">{{ to_review }} repl{{ to_review|pluralize:"y,ies" }} to review</span>{% endif %}
+    {% if to_review %}<a class="badge s-QUERY" href="{% url 'cancellations:dashboard' %}">{{ to_review }} repl{{ to_review|pluralize:"y,ies" }} to review</a>{% endif %}
     {% if unmatched_count %}<a class="badge s-REJECTED" href="{% url 'cancellations:unmatched_list' %}">{{ unmatched_count }} unmatched</a>{% endif %}
     <a class="btn" href="{% url 'cancellations:case_create' %}">New cancellation</a>
   </div>
