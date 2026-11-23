@@ -147,6 +147,22 @@ class ReviewForm(forms.Form):
         ("INFO", "Information only — no status change"),
     ], widget=forms.RadioSelect)
     note = forms.CharField(widget=forms.Textarea(attrs={"rows": 2}), required=False)
+
+    def __init__(self, *args, case=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if case is not None:
+            # Offer only the outcomes the case's current status allows (e.g. a Confirmed case: information only).
+            from .services.workflow import REVIEW_OUTCOMES, can_transition
+
+            self.fields["classification"].choices = [
+                (value, label) for value, label in self.fields["classification"].choices
+                if value not in REVIEW_OUTCOMES or can_transition(case.status, REVIEW_OUTCOMES[value])
+            ]
+
+    @property
+    def only_info(self):
+        return [v for v, _ in self.fields["classification"].choices] == ["INFO"]
+
     confirmed_effective_date = forms.DateField(required=False, widget=DATE,
                                                label="Effective date confirmed by the insurer")
     certificate_doc = forms.IntegerField(required=False)

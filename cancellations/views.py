@@ -283,7 +283,7 @@ def case_detail(request, pk):
         "emails": case.emails.prefetch_related("documents").order_by("received_at"),
         "events": case.events.select_related("actor"),
         "doc_form": DocumentForm(prefix="doc", required=True),
-        "review_form": ReviewForm(),
+        "review_form": ReviewForm(case=case),
         "preview_subject": preview_subject,
         "preview_body": preview_body,
         "can_close": case.status in (S.CONFIRMED, S.REJECTED, S.QUERY),
@@ -414,7 +414,7 @@ def document_download(request, doc_id):
 @cancellations_role_required
 def email_review(request, email_id):
     email = get_object_or_404(CaseEmail.objects.select_related("case"), pk=email_id, case__isnull=False)
-    form = ReviewForm(request.POST, request.FILES)
+    form = ReviewForm(request.POST, request.FILES, case=email.case)
     if form.is_valid():
         data = form.cleaned_data
         cert_doc = None

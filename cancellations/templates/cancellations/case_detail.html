@@ -131,11 +131,19 @@
             <form method="post" action="{% url 'cancellations:email_review' e.pk %}" class="review-box review-form">
               {% csrf_token %}
               <h3>{% icon "list-checks" 16 %}Review this reply</h3>
+              {% if review_form.only_info %}
+                <input type="hidden" name="classification" value="INFO">
+                <p class="help" style="margin:0">This case is already {{ case.get_status_display }}, so this reply cannot change its status. Mark it as read once you have checked it.</p>
+                <div class="btn-row" style="justify-content:flex-end;margin-top:14px">
+                  <button class="btn btn-primary" data-busy-label="Saving…">{% icon "check-circle" 16 %}<span data-label>Mark as read</span></button>
+                </div>
+              {% else %}
               <div class="choice-list">{{ review_form.classification }}</div>
-              <p class="help" style="margin:10px 0 0">Confirmed uses the case's effective date ({{ case.effective_date|date:"d M Y" }}{% if case.effective_time %} at {{ case.effective_time|time:"H:i" }}{% endif %}) and marks the cover cancelled. Upload the certificate / credit note under Supporting documents; the case then closes automatically.</p>
+              {% if case.status != "CONFIRMED" %}<p class="help" style="margin:10px 0 0">Confirmed uses the case's effective date ({{ case.effective_date|date:"d M Y" }}{% if case.effective_time %} at {{ case.effective_time|time:"H:i" }}{% endif %}) and marks the cover cancelled. Upload the certificate / credit note under Supporting documents; the case then closes automatically.</p>{% endif %}
               <div class="btn-row" style="justify-content:flex-end;margin-top:14px">
                 <button class="btn btn-primary" data-busy-label="Saving…">{% icon "check-circle" 16 %}<span data-label>Record decision</span></button>
               </div>
+              {% endif %}
             </form>
             {% endif %}
           </article>

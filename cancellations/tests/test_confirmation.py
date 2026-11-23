@@ -140,6 +140,24 @@ class ConfirmTests(TestCase):
         self.assertEqual(self.case.status, S.CONFIRMED)
         self.assertEqual(self.case.confirmed_effective_date, self.case.effective_date)
 
+    def test_second_reply_on_confirmed_case_can_only_be_marked_read(self):
+        self.client.force_login(self.user)
+        self.confirm()
+        second, _ = ingest(inbound(subject=f"Re: {self.case.reference}", text="done", message_id="<second@insurer.test>"))
+        page = self.client.get(self.case.get_absolute_url())
+        self.assertContains(page, "Mark as read")
+        self.assertNotContains(page, 'value="CONFIRMATION"')
+        r = self.client.post(reverse("cancellations:email_review", args=[second.pk]), {"classification": "INFO"}, follow=True)
+        self.assertContains(r, "Reply recorded")
+        second.refresh_from_db()
+        self.assertEqual(second.classification, C.INFO)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.CONFIRMED)
+        # A stale page posting Confirmed is refused by the form, not the state machine.
+        third, _ = ingest(inbound(subject=f"Re: {self.case.reference}", text="again", message_id="<third@insurer.test>"))
+        r = self.client.post(reverse("cancellations:email_review", args=[third.pk]), {"classification": "CONFIRMATION"}, follow=True)
+        self.assertContains(r, "Select a valid choice")
+
     def test_confirm_without_certificate_stays_open_until_upload(self):
         self.client.force_login(self.user)
         self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {
