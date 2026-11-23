@@ -14,7 +14,8 @@
     header nav { display:flex; gap:16px; flex:1; } header form { margin:0; }
     main { max-width:1150px; margin:0 auto; padding:20px; }
     h1 { font-size:22px; margin:0 0 14px; } h2 { font-size:17px; margin:0 0 10px; }
-    .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:16px; overflow-x:auto; }
+    @media (max-width: 640px) { main { padding:12px; } dl.kv { grid-template-columns:1fr; } }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; }
     table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
     th { color:var(--muted); font-weight:600; font-size:13px; }
