@@ -85,9 +85,13 @@ class ConfirmTests(TestCase):
         self.assertEqual(doc.type, DocType.CERTIFICATE)
         self.assertTrue(self.case.has_certificate)
         self.assertTrue(self.case.events.filter(action="CERTIFICATE_RECORDED").exists())
-        close_case(self.case, self.user)
+        # confirmed + certificate = complete, so it closes by itself
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, S.CLOSED)
+        closed = self.case.events.get(action="CLOSED")
+        self.assertEqual((closed.from_status, closed.to_status, closed.actor), (S.CONFIRMED, S.CLOSED, self.user))
+        self.assertIn("automatically", closed.note)
+        self.assertEqual(self.case.confirmed_effective_date, D(2026, 6, 30))  # confirmation data kept
 
     def test_certificate_upload(self):
         self.confirm(certificate_upload=SimpleUploadedFile("cert.pdf", PDF, "application/pdf"))
@@ -119,9 +123,39 @@ class ConfirmTests(TestCase):
             "classification": "CONFIRMATION", "confirmed_effective_date": "2026-06-30", "certificate_doc": doc.pk,
         }, follow=True)
         self.assertContains(r, "pro-rata refund 18500.00")
+        self.assertContains(r, "case is closed")
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.CLOSED)
+        self.assertTrue(self.case.has_certificate)
+
+    def test_confirm_without_certificate_stays_open_until_upload(self):
+        self.client.force_login(self.user)
+        self.client.post(reverse("cancellations:email_review", args=[self.reply.pk]), {
+            "classification": "CONFIRMATION", "confirmed_effective_date": "2026-06-30"})
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, S.CONFIRMED)
-        self.assertTrue(self.case.has_certificate)
+        # Another document type does not close it...
+        self.client.post(reverse("cancellations:document_upload", args=[self.case.pk]), {
+            "doc-doc_type": DocType.OTHER, "doc-source": "insurer",
+            "doc-file": SimpleUploadedFile("note.pdf", PDF, "application/pdf")})
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.CONFIRMED)
+        # ...the certificate does.
+        r = self.client.post(reverse("cancellations:document_upload", args=[self.case.pk]), {
+            "doc-doc_type": DocType.CERTIFICATE, "doc-source": "insurer",
+            "doc-file": SimpleUploadedFile("cert.pdf", PDF, "application/pdf")}, follow=True)
+        self.assertContains(r, "complete and has been closed")
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.CLOSED)
+
+    def test_rejected_case_is_not_auto_closed(self):
+        review_inbound_email(self.reply, C.REJECTION, self.user)
+        self.client.force_login(self.user)
+        self.client.post(reverse("cancellations:document_upload", args=[self.case.pk]), {
+            "doc-doc_type": DocType.CERTIFICATE, "doc-source": "insurer",
+            "doc-file": SimpleUploadedFile("cert.pdf", PDF, "application/pdf")})
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, S.REJECTED)
 
     def test_confirm_via_page_without_date_is_refused(self):
         self.client.force_login(self.user)
