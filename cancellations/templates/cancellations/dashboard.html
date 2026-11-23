@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row" style="align-items:center;margin-bottom:12px">
+  <h1 style="margin:0">Dashboard</h1>
+  <form method="get" class="row" style="justify-content:flex-end;flex:2">
+    <input type="text" name="q" placeholder="Policy number or IMOTH-CXL-… reference" aria-label="Search by policy number or reference" style="max-width:340px">
+    <button class="btn" style="flex:0">Search</button>
+  </form>
+</div>
+
+<div class="tiles">
+  <a class="tile" href="{% url 'cancellations:case_list' %}?view=open"><span class="n">{{ counts.open }}</span><span>Open cases</span><small>draft, sent or query</small></a>
+  <a class="tile {% if counts.stale %}alert{% endif %}" href="{% url 'cancellations:case_list' %}?view=stale"><span class="n">{{ counts.stale }}</span><span>Stale</span><small>no insurer reply after reminder</small></a>
+  <a class="tile {% if counts.unmatched %}warn{% endif %}" href="{% url 'cancellations:unmatched_list' %}"><span class="n">{{ counts.unmatched }}</span><span>Unmatched emails</span><small>need linking or dismissing</small></a>
+  <a class="tile ok" href="{% url 'cancellations:case_list' %}?view=confirmed_month"><span class="n">{{ counts.confirmed_month }}</span><span>Confirmed in {{ month_label }}</span><small>refunds {{ currency }} {{ refunds_month|default:"0.00" }}</small></a>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Replies to review</h2>
+    {% for e in to_review %}
+      <div class="item"><a href="{{ e.case.get_absolute_url }}">{{ e.case.reference }}</a> · {{ e.case.cover.policy_number }}<br>
+        <span class="muted">{{ e.received_at|date:"d M H:i" }} · {{ e.subject|truncatechars:70 }}</span></div>
+    {% empty %}<p class="muted">Nothing waiting.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>Stale — chase the insurer</h2>
+    {% for c in stale_cases %}
+      <div class="item"><a href="{{ c.get_absolute_url }}">{{ c.reference }}</a> · {{ c.cover.insurer }} · {{ c.cover.policy_number }}<br>
+        <span class="muted">sent {{ c.sent_at|date:"d M H:i" }} ({{ c.sent_at|timesince }} ago), SLA {{ c.cover.insurer.sla_hours }} h</span></div>
+    {% empty %}<p class="muted">No stale cases.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>Confirmed — certificate missing</h2>
+    {% for c in missing_certificates %}
+      <div class="item"><a href="{{ c.get_absolute_url }}">{{ c.reference }}</a> · {{ c.cover.insurer }} · {{ c.cover.policy_number }}</div>
+    {% empty %}<p class="muted">All confirmed cases have a certificate.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>Drafts not yet sent</h2>
+    {% for c in drafts %}
+      <div class="item"><a href="{{ c.get_absolute_url }}">{{ c.reference }}</a> · {{ c.cover.client_name }} · {{ c.cover.policy_number }}</div>
+    {% empty %}<p class="muted">No drafts.</p>{% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="row" style="align-items:center">
+    <h2 style="margin:0">Confirmed in {{ month_label }}</h2>
+    <div style="text-align:right"><a class="btn secondary" href="{% url 'cancellations:confirmed_csv' %}">Download CSV (all confirmed)</a></div>
+  </div>
+  <table>
+    <thead><tr><th>Reference</th><th>Client</th><th>Policy</th><th>Insurer</th><th>Effective</th><th style="text-align:right">Refund</th></tr></thead>
+    <tbody>
+    {% for c in recent_confirmed %}
+      <tr><td><a href="{{ c.get_absolute_url }}">{{ c.reference }}</a></td><td>{{ c.cover.client_name }}</td><td>{{ c.cover.policy_number }}</td>
+          <td>{{ c.cover.insurer }}</td><td>{{ c.confirmed_effective_date|date:"d M Y" }}</td><td style="text-align:right">{{ c.refund_amount }}</td></tr>
+    {% empty %}<tr><td colspan="6" class="muted">None yet this month.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

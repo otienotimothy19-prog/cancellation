@@ -38,14 +38,21 @@
     .badbox { border-left:4px solid var(--bad); background:#fff1ef; padding:10px 12px; border-radius:4px; margin-bottom:10px; }
     .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; } .row > * { flex:1; min-width:160px; }
     .radio-list ul { list-style:none; padding:0; margin:4px 0; } .radio-list label { font-weight:400; display:inline; }
+    .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:16px; }
+    .tile { background:var(--card); border:1px solid var(--line); border-left:5px solid var(--accent); border-radius:8px; padding:12px 14px;
+            display:flex; flex-direction:column; text-decoration:none; color:var(--ink); }
+    .tile .n { font-size:30px; font-weight:700; line-height:1.1; } .tile small { color:var(--muted); }
+    .tile.alert { border-left-color:var(--bad); } .tile.warn { border-left-color:var(--warn); } .tile.ok { border-left-color:var(--ok); }
+    .item { padding:6px 0; border-bottom:1px solid var(--line); } .item:last-child { border-bottom:0; }
     dl.kv { display:grid; grid-template-columns:170px 1fr; gap:4px 10px; margin:0; } dl.kv dt { color:var(--muted); } dl.kv dd { margin:0; }
   </style>
 </head>
 <body>
 <header>
-  <a class="brand" href="{% url 'cancellations:case_list' %}">IMOTH Cancellations</a>
+  <a class="brand" href="{% url 'cancellations:dashboard' %}">IMOTH Cancellations</a>
   {% if user.is_authenticated %}
   <nav>
+    <a href="{% url 'cancellations:dashboard' %}">Dashboard</a>
     <a href="{% url 'cancellations:case_list' %}">Cases</a>
     <a href="{% url 'cancellations:case_create' %}">New cancellation</a>
     <a href="{% url 'cancellations:unmatched_list' %}">Unmatched inbox</a>

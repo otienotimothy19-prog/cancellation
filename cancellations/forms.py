@@ -147,3 +147,6 @@ class SearchForm(forms.Form):
     status = forms.ChoiceField(
         required=False, choices=[("", "All statuses"), *CancellationCase.Status.choices],
     )
+    view = forms.ChoiceField(required=False, choices=[
+        ("", "All cases"), ("open", "Open"), ("stale", "Stale"), ("confirmed_month", "Confirmed this month"),
+    ], label="Show")

@@ -1,16 +1,20 @@
 import mimetypes
+from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import CaseForm, CoverChoiceForm, DocumentForm, LinkEmailForm, ReviewForm, SearchForm
 from .models import CancellationCase, CaseDocument, CaseEmail, MailboxState
 from .permissions import cancellations_role_required
-from .reasons import REASONS, doc_label
+from .reasons import REASONS, DocType, doc_label
 from .services.documents import save_uploaded_document
 from .services.inbound import dismiss_email, link_email
 from .services.refunds import pro_rata_refund
@@ -28,29 +32,87 @@ def _reason_meta():
     }
 
 
+OPEN_STATUSES = (S.DRAFT, S.SENT, S.QUERY)
+
+
+def _month_start():
+    now = timezone.localtime()
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _unmatched_qs():
+    return CaseEmail.objects.filter(direction=CaseEmail.Direction.INBOUND, case__isnull=True).exclude(
+        classification=CaseEmail.Classification.DISMISSED)
+
+
+def _to_review_qs():
+    return CaseEmail.objects.filter(
+        direction=CaseEmail.Direction.INBOUND, case__isnull=False, classification=CaseEmail.Classification.UNREVIEWED,
+    ).exclude(case__status=S.CLOSED)
+
+
+def search_cases(q):
+    """Policy number, reference (IMOTH-CXL-000123 / 123) or client name."""
+    cases = CancellationCase.objects.select_related("cover__insurer")
+    q = (q or "").strip()
+    if not q:
+        return cases
+    pk = CancellationCase.pk_from_reference(q.upper())
+    filt = Q(cover__policy_number__icontains=q) | Q(cover__client_name__icontains=q)
+    if pk:
+        filt |= Q(pk=pk)
+    elif q.isdigit():
+        filt |= Q(pk=int(q))
+    return cases.filter(filt)
+
+
+@cancellations_role_required
+def dashboard(request):
+    q = request.GET.get("q", "").strip()
+    if q:
+        matches = list(search_cases(q)[:2])
+        if len(matches) == 1:  # exact hit: go straight to the case
+            return redirect(matches[0])
+        return redirect(f"{reverse('cancellations:case_list')}?{urlencode({'q': q})}")
+    cases = CancellationCase.objects.select_related("cover__insurer")
+    month_start = _month_start()
+    confirmed_month = cases.filter(confirmed_at__gte=month_start)
+    return render(request, "cancellations/dashboard.html", {
+        "counts": {
+            "open": cases.filter(status__in=OPEN_STATUSES).count(),
+            "stale": cases.filter(is_stale=True, status=S.SENT).count(),
+            "unmatched": _unmatched_qs().count(),
+            "confirmed_month": confirmed_month.count(),
+        },
+        "month_label": month_start.strftime("%B %Y"),
+        "refunds_month": confirmed_month.aggregate(total=Sum("refund_amount"))["total"],
+        "currency": settings.CURRENCY,
+        "to_review": _to_review_qs().select_related("case__cover")[:20],
+        "stale_cases": cases.filter(is_stale=True, status=S.SENT).order_by("sent_at")[:20],
+        "missing_certificates": cases.filter(status=S.CONFIRMED).exclude(documents__type=DocType.CERTIFICATE)[:20],
+        "drafts": cases.filter(status=S.DRAFT).order_by("-created_at")[:10],
+        "recent_confirmed": confirmed_month.order_by("-confirmed_at")[:10],
+    })
+
+
 @cancellations_role_required
 def case_list(request):
     form = SearchForm(request.GET or None)
     cases = CancellationCase.objects.select_related("cover__insurer")
     if form.is_valid():
-        q = form.cleaned_data["q"].strip()
-        if q:
-            pk = CancellationCase.pk_from_reference(q.upper())
-            filt = Q(cover__policy_number__icontains=q) | Q(cover__client_name__icontains=q)
-            if pk:
-                filt |= Q(pk=pk)
-            elif q.isdigit():
-                filt |= Q(pk=int(q))
-            cases = cases.filter(filt)
+        cases = search_cases(form.cleaned_data["q"])
         if form.cleaned_data["status"]:
             cases = cases.filter(status=form.cleaned_data["status"])
-    unmatched_count = CaseEmail.objects.filter(direction=CaseEmail.Direction.INBOUND, case__isnull=True).exclude(
-        classification=CaseEmail.Classification.DISMISSED).count()
-    to_review = CaseEmail.objects.filter(
-        direction=CaseEmail.Direction.INBOUND, case__isnull=False, classification=CaseEmail.Classification.UNREVIEWED
-    ).count()
+        view = form.cleaned_data["view"]
+        if view == "open":
+            cases = cases.filter(status__in=OPEN_STATUSES)
+        elif view == "stale":
+            cases = cases.filter(is_stale=True, status=S.SENT)
+        elif view == "confirmed_month":
+            cases = cases.filter(confirmed_at__gte=_month_start()).order_by("-confirmed_at")
     return render(request, "cancellations/case_list.html", {
-        "form": form, "cases": cases[:200], "unmatched_count": unmatched_count, "to_review": to_review,
+        "form": form, "cases": cases[:200], "unmatched_count": _unmatched_qs().count(),
+        "to_review": _to_review_qs().count(),
     })
 
 

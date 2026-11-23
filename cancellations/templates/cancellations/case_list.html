@@ -11,22 +11,24 @@
 <form class="card row" method="get">
   <div><label for="id_q">Policy number, reference or client</label>{{ form.q }}</div>
   <div style="max-width:220px"><label for="id_status">Status</label>{{ form.status }}</div>
+  <div style="max-width:220px"><label for="id_view">Show</label>{{ form.view }}</div>
   <div style="flex:0"><button class="btn">Search</button></div>
 </form>
 <div class="card">
 <table>
-  <thead><tr><th>Reference</th><th>Client</th><th>Policy</th><th>Insurer</th><th>Reason</th><th>Effective</th><th>Status</th><th>Created</th></tr></thead>
+  <thead><tr><th>Reference</th><th>Client</th><th>Policy</th><th>Insurer</th><th>Reason</th><th>Effective</th><th>Refund</th><th>Status</th><th>Created</th></tr></thead>
   <tbody>
   {% for c in cases %}
     <tr>
       <td><a href="{{ c.get_absolute_url }}">{{ c.reference }}</a></td>
       <td>{{ c.cover.client_name }}</td><td>{{ c.cover.policy_number }}</td><td>{{ c.cover.insurer }}</td>
-      <td>{{ c.reason_label|default:"—" }}</td><td>{{ c.effective_date|date:"d M Y"|default:"—" }}</td>
+      <td>{{ c.reason_label|default:"—" }}</td><td>{{ c.confirmed_effective_date|default:c.effective_date|date:"d M Y"|default:"—" }}</td>
+      <td>{{ c.refund_amount|default:"—" }}</td>
       <td><span class="badge s-{{ c.status }}">{{ c.get_status_display }}</span>{% if c.is_stale %} <span class="badge stale">Stale</span>{% endif %}</td>
       <td class="muted">{{ c.created_at|date:"d M Y" }}</td>
     </tr>
   {% empty %}
-    <tr><td colspan="8" class="muted">No cases found.</td></tr>
+    <tr><td colspan="9" class="muted">No cases found.</td></tr>
   {% endfor %}
   </tbody>
 </table>

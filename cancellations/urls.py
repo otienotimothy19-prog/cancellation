@@ -1,11 +1,12 @@
 from django.urls import path
 
-from . import views
+from . import exports, views
 
 app_name = "cancellations"
 
 urlpatterns = [
-    path("", views.case_list, name="case_list"),
+    path("", views.dashboard, name="dashboard"),
+    path("cases/", views.case_list, name="case_list"),
     path("cases/new/", views.case_create, name="case_create"),
     path("cases/<int:pk>/", views.case_detail, name="case_detail"),
     path("cases/<int:pk>/edit/", views.case_edit, name="case_edit"),
@@ -16,4 +17,6 @@ urlpatterns = [
     path("emails/<int:email_id>/review/", views.email_review, name="email_review"),
     path("unmatched/", views.unmatched_list, name="unmatched_list"),
     path("unmatched/<int:email_id>/", views.unmatched_detail, name="unmatched_detail"),
+    path("exports/confirmed-cancellations.csv", exports.confirmed_csv, name="confirmed_csv"),
+    path("api/confirmed-cancellations/", exports.confirmed_api, name="confirmed_api"),
 ]
