@@ -216,7 +216,7 @@ class DashboardTests(TestCase):
         ingest(inbound(subject="??", text="??", message_id="<x@x.test>"))  # unmatched
         r = self.client.get(reverse("cancellations:dashboard"))
         self.assertEqual(r.context["counts"], {"open": 3, "stale": 1, "unmatched": 1, "confirmed_month": 1})
-        self.assertContains(r, "18500.00")
+        self.assertContains(r, "18,500.00")  # dashboard shows money with thousands separators
         self.assertContains(r, draft.reference)  # listed under drafts
         self.assertContains(r, stale.reference)  # listed under stale
         self.assertNotContains(r, sent.reference)  # plain SENT cases need no attention
