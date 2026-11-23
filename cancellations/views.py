@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .forms import CaseForm, CoverChoiceForm, DocumentForm, LinkEmailForm, ReviewForm, SearchForm
-from .models import CancellationCase, CaseDocument, CaseEmail
+from .models import CancellationCase, CaseDocument, CaseEmail, MailboxState
 from .permissions import cancellations_role_required
 from .reasons import REASONS, doc_label
 from .services.documents import save_uploaded_document
@@ -213,7 +213,9 @@ def case_close(request, pk):
 def unmatched_list(request):
     emails = CaseEmail.objects.filter(direction=CaseEmail.Direction.INBOUND, case__isnull=True).exclude(
         classification=CaseEmail.Classification.DISMISSED).select_related("suggested_case")
-    return render(request, "cancellations/unmatched_list.html", {"emails": emails})
+    return render(request, "cancellations/unmatched_list.html", {
+        "emails": emails, "mailboxes": MailboxState.objects.order_by("folder"),
+    })
 
 
 @cancellations_role_required

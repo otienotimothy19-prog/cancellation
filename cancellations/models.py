@@ -306,3 +306,18 @@ class CaseEvent(models.Model):
 
     def delete(self, *args, **kwargs):
         raise AppendOnlyError("case_event rows cannot be deleted")
+
+
+class MailboxState(models.Model):
+    """IMAP polling bookmark: the highest UID processed per folder (reset if UIDVALIDITY changes)."""
+
+    folder = models.CharField(max_length=200, unique=True)
+    uidvalidity = models.BigIntegerField(null=True, blank=True)
+    last_uid = models.BigIntegerField(default=0)
+    failing_uid = models.BigIntegerField(null=True, blank=True)
+    failures = models.PositiveIntegerField(default=0)
+    last_polled_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"{self.folder} (last UID {self.last_uid})"

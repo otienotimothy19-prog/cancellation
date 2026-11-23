@@ -139,7 +139,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 30 * 1024 * 1024  # inbound webhooks carry base64 
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 # --- Email ------------------------------------------------------------------
-EMAIL_PROVIDER = env("EMAIL_PROVIDER", "console").lower()  # postmark | mailgun | console
+EMAIL_PROVIDER = env("EMAIL_PROVIDER", "console").lower()  # zoho | postmark | mailgun | console
 MAIL_DOMAIN = env("MAIL_DOMAIN", "example.com")  # our sending/receiving domain
 CANCELLATIONS_MAILBOX = env("CANCELLATIONS_MAILBOX", "cancellations")  # local part
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", f"IMOTH Cancellations <{CANCELLATIONS_MAILBOX}@{MAIL_DOMAIN}>")
@@ -149,7 +149,25 @@ ANYMAIL = {
     # "user:password" that the provider must send as HTTP Basic auth on the inbound webhook.
     "WEBHOOK_SECRET": env("INBOUND_WEBHOOK_SECRET", ""),
 }
-if EMAIL_PROVIDER == "postmark":
+# Mailbox account (Zoho Mail): used for SMTP sending and IMAP polling of replies.
+MAILBOX_USER = env("MAILBOX_USER", f"{CANCELLATIONS_MAILBOX}@{MAIL_DOMAIN}")
+MAILBOX_PASSWORD = env("MAILBOX_PASSWORD", "")  # Zoho app-specific password
+IMAP_HOST = env("IMAP_HOST", "imappro.zoho.com")
+IMAP_PORT = int(env("IMAP_PORT", "993"))
+IMAP_FOLDER = env("IMAP_FOLDER", "INBOX")
+IMAP_LOOKBACK_DAYS = int(env("IMAP_LOOKBACK_DAYS", "14"))  # first run / UIDVALIDITY reset
+MAIL_POLL_INTERVAL = int(env("MAIL_POLL_INTERVAL", "60"))  # seconds between polls in --loop mode
+
+if EMAIL_PROVIDER == "zoho":
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = env("SMTP_HOST", "smtppro.zoho.com")
+    EMAIL_PORT = int(env("SMTP_PORT", "465"))
+    EMAIL_USE_SSL = EMAIL_PORT == 465
+    EMAIL_USE_TLS = EMAIL_PORT == 587
+    EMAIL_HOST_USER = MAILBOX_USER
+    EMAIL_HOST_PASSWORD = env("MAILBOX_PASSWORD", required=True)
+    EMAIL_TIMEOUT = 30
+elif EMAIL_PROVIDER == "postmark":
     EMAIL_BACKEND = "anymail.backends.postmark.EmailBackend"
     ANYMAIL["POSTMARK_SERVER_TOKEN"] = env("POSTMARK_SERVER_TOKEN", required=True)
 elif EMAIL_PROVIDER == "mailgun":
@@ -187,4 +205,7 @@ LOGGING = {
 INBOUND_REQUIRE_SENDER_AUTH = env_bool("INBOUND_REQUIRE_SENDER_AUTH", True)
 # authserv-id of the Authentication-Results header your provider writes (the text before the
 # first ";"). Headers with any other id are ignored because senders can forge them.
-INBOUND_AUTHSERV_ID = env("INBOUND_AUTHSERV_ID", "")
+INBOUND_AUTHSERV_ID = env("INBOUND_AUTHSERV_ID", "mx.zohomail.com" if EMAIL_PROVIDER == "zoho" else "")
+# Which header carries the receiving server's verdict. Zoho may stamp
+# "ARC-Authentication-Results" instead; check a real reply with `manage.py check_mailbox`.
+INBOUND_AUTH_HEADER = env("INBOUND_AUTH_HEADER", "Authentication-Results")

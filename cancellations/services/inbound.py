@@ -212,12 +212,15 @@ PROVIDER_SPF_HEADERS = {"postmark": "Received-SPF", "mailgun": "X-Mailgun-Spf"}
 def _trusted_auth_results(msg):
     """Authentication-Results headers written by our own receiving server (matching authserv-id)."""
     servid = (getattr(settings, "INBOUND_AUTHSERV_ID", "") or "").strip().lower()
-    top = _first(msg, "Authentication-Results")
+    header = getattr(settings, "INBOUND_AUTH_HEADER", "Authentication-Results") or "Authentication-Results"
+    top = _first(msg, header)
+    # ARC-Authentication-Results starts with an instance tag: "i=1; mx.zohomail.com; ..."
+    body = re.sub(r"^\s*i=\d+\s*;", "", top)
     # Only the topmost header, and only if our server wrote it: lower copies (even ones
     # claiming our authserv-id) may have been supplied by the sender.
-    if not servid or top.split(";", 1)[0].strip().lower() != servid:
+    if not servid or body.split(";", 1)[0].strip().lower() != servid:
         return []
-    return [top]
+    return [body]
 
 
 def sender_authentication(msg):
@@ -357,8 +360,8 @@ def _as_msg(email):
     return InboundEmail(from_email=email.from_email, from_address=email.headers.get("_from_address", ""))
 
 
-def from_anymail(message, event_id=None):
-    """Convert an AnymailInboundMessage (Postmark or Mailgun) into an InboundEmail."""
+def from_anymail(message, event_id=None, from_mailbox=False):
+    """Convert an AnymailInboundMessage (Postmark, Mailgun or a raw IMAP message) into an InboundEmail."""
     headers = {}
     for key, value in message.items():
         headers[key] = f"{headers[key]}\n{value}" if key in headers else str(value)
@@ -366,13 +369,20 @@ def from_anymail(message, event_id=None):
         Attachment(a.get_filename() or "attachment.bin", a.get_content_type(), a.get_content_bytes() or b"")
         for a in message.attachments
     ]
+    envelope_sender = message.envelope_sender or ""
+    envelope_recipient = message.envelope_recipient or ""
+    if from_mailbox:
+        # Read from a mailbox (IMAP): the receiving server writes Return-Path and Delivered-To
+        # at delivery time, so the topmost copies carry the envelope addresses.
+        envelope_sender = envelope_sender or parseaddr(message.get("Return-Path") or "")[1]
+        envelope_recipient = envelope_recipient or parseaddr(message.get("Delivered-To") or "")[1]
     return InboundEmail(
         from_email=str(message.from_email) if message.from_email else (message.get("From") or ""),
         from_address=message.from_email.addr_spec if message.from_email else "",
-        envelope_sender=message.envelope_sender or "",
+        envelope_sender=envelope_sender,
         to=[a.addr_spec for a in message.to],
         cc=[a.addr_spec for a in message.cc],
-        envelope_recipient=message.envelope_recipient or "",
+        envelope_recipient=envelope_recipient,
         subject=message.subject or "",
         text=message.text or "",
         html=message.html or "",
