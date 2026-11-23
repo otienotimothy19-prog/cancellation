@@ -304,8 +304,8 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 | `MAILGUN_API_KEY` / `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun | – | API and webhook signing keys |
 | `MAILGUN_SENDER_DOMAIN` / `MAILGUN_API_URL` | no | `MAIL_DOMAIN` / US | EU: `https://api.eu.mailgun.net/v3` |
 | `AWS_STORAGE_BUCKET_NAME` | yes (prod) | – | Spaces bucket; when unset, files go to local disk |
-| `AWS_S3_ENDPOINT_URL` | with bucket | – | e.g. `https://fra1.digitaloceanspaces.com` |
-| `AWS_S3_REGION_NAME` | with bucket | – | e.g. `fra1` |
+| `AWS_S3_ENDPOINT_URL` | with bucket | – | e.g. `https://sfo3.digitaloceanspaces.com` (region address, not the bucket URL) |
+| `AWS_S3_REGION_NAME` | with bucket | – | e.g. `sfo3` |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | with bucket | – | Spaces access keys |
 | `AWS_LOCATION` | no | `case-documents` | Key prefix inside the bucket |
 | `PRIVATE_MEDIA_ROOT` | no | `./private_media` | Local file folder (dev only) |

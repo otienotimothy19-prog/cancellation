@@ -2,7 +2,7 @@
 # Set SECRET_KEY, MAILBOX_PASSWORD, EXPORT_API_TOKENS, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as encrypted
 # values in the App Platform UI after creating the app.
 name: imoth-cancellations
-region: fra
+region: blr   # where the app (and its Postgres database) run
 
 # Shared by every component (App Platform applies app-level envs to all of them).
 envs:
@@ -19,14 +19,14 @@ envs:
   - { key: APP_BASE_URL, scope: RUN_TIME, value: "${APP_URL}" }
   - { key: SLA_ALERT_EMAIL, scope: RUN_TIME, value: cancellation@imoth.co.ke }
   - { key: AWS_STORAGE_BUCKET_NAME, scope: RUN_TIME, value: imoth-cancellations }
-  - { key: AWS_S3_ENDPOINT_URL, scope: RUN_TIME, value: "https://fra1.digitaloceanspaces.com" }
-  - { key: AWS_S3_REGION_NAME, scope: RUN_TIME, value: fra1 }
+  - { key: AWS_S3_ENDPOINT_URL, scope: RUN_TIME, value: "https://sfo3.digitaloceanspaces.com" }
+  - { key: AWS_S3_REGION_NAME, scope: RUN_TIME, value: sfo3 }
   - { key: AWS_ACCESS_KEY_ID, scope: RUN_TIME, type: SECRET }
   - { key: AWS_SECRET_ACCESS_KEY, scope: RUN_TIME, type: SECRET }
 
 services:
   - name: web
-    github: { repo: YOUR_ORG/imoth-cancellations, branch: main, deploy_on_push: true }
+    github: { repo: otienotimothy19-prog/cancellation, branch: main, deploy_on_push: true }
     environment_slug: python
     build_command: python manage.py collectstatic --noinput
     run_command: gunicorn config.wsgi --bind 0.0.0.0:8080 --workers 2 --timeout 60 --access-logfile -
@@ -40,7 +40,7 @@ services:
 
 workers:
   - name: worker   # mailbox polling + SLA reminders / STALE flags
-    github: { repo: YOUR_ORG/imoth-cancellations, branch: main, deploy_on_push: true }
+    github: { repo: otienotimothy19-prog/cancellation, branch: main, deploy_on_push: true }
     environment_slug: python
     run_command: python manage.py run_worker
     instance_size_slug: apps-s-1vcpu-0.5gb
@@ -49,7 +49,7 @@ workers:
 jobs:
   - name: migrate
     kind: PRE_DEPLOY
-    github: { repo: YOUR_ORG/imoth-cancellations, branch: main }
+    github: { repo: otienotimothy19-prog/cancellation, branch: main }
     environment_slug: python
     run_command: python manage.py migrate --noinput
 
