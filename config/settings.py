@@ -180,3 +180,8 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
 }
+
+# Inbound replies are attached to a case only if the sender is one of the insurer's known
+# addresses AND the receiving provider recorded SPF/DMARC pass for it. Set to false only
+# if your provider adds no authentication headers (replies then still need a known address).
+INBOUND_REQUIRE_SENDER_AUTH = env_bool("INBOUND_REQUIRE_SENDER_AUTH", True)

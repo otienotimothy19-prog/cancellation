@@ -13,13 +13,14 @@ import html
 import logging
 import re
 from dataclasses import dataclass, field
+from email.utils import parseaddr
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from ..models import CancellationCase, CaseEmail, split_addresses
+from ..models import CancellationCase, CaseEmail
 from ..reasons import DocType
 from .documents import save_bytes_document
 from .workflow import S, log_event
@@ -42,7 +43,9 @@ class Attachment:
 class InboundEmail:
     """Provider-neutral inbound email."""
 
-    from_email: str
+    from_email: str  # full From header, for display
+    from_address: str = ""  # parsed addr-spec of From; the only value used for verification
+    envelope_sender: str = ""
     to: list = field(default_factory=list)
     cc: list = field(default_factory=list)
     envelope_recipient: str = ""
@@ -175,17 +178,53 @@ def match_case(msg):
     return MatchResult(None, M.NONE, "; ".join(notes) or "No reference, thread or policy number found")
 
 
-def authentication_failed(msg):
-    """True if the receiving provider recorded a DMARC failure for this message."""
-    results = " ".join(v for k, v in msg.headers.items() if k.lower() == "authentication-results")
-    return bool(re.search(r"\bdmarc=fail\b", results, re.IGNORECASE))
+def _domain(address):
+    return address.rsplit("@", 1)[-1].lower().strip(">") if address and "@" in address else ""
+
+
+def _aligned(domain_a, domain_b):
+    """Relaxed DMARC-style alignment: same domain or one is a subdomain of the other."""
+    if not domain_a or not domain_b:
+        return False
+    return domain_a == domain_b or domain_a.endswith("." + domain_b) or domain_b.endswith("." + domain_a)
+
+
+def _header(msg, name):
+    """Topmost occurrence only: the receiving provider prepends its own result headers,
+    so later copies may have been written by the sender and are not trusted."""
+    for key, value in msg.headers.items():
+        if key.lower() == name.lower():
+            return value.split("\n", 1)[0]
+    return ""
+
+
+def sender_authentication(msg):
+    """Return (passed, reason) using the receiving provider's SPF/DKIM/DMARC results.
+
+    Pass requires positive evidence: dmarc=pass, or an SPF pass for an envelope sender
+    aligned with the From domain. An explicit DMARC fail always fails.
+    """
+    from_domain = _domain(sender_address(msg))
+    auth_results = _header(msg, "Authentication-Results")
+    if re.search(r"\bdmarc=fail\b", auth_results, re.IGNORECASE):
+        return False, "DMARC failed"
+    if re.search(r"\bdmarc=pass\b", auth_results, re.IGNORECASE):
+        return True, "DMARC pass"
+    spf = " ".join([_header(msg, "Received-SPF"), _header(msg, "X-Mailgun-Spf")])
+    spf_auth = re.search(r"\bspf=pass\b", auth_results, re.IGNORECASE)
+    if (re.match(r"\s*pass\b", spf, re.IGNORECASE) or spf_auth) and _aligned(_domain(msg.envelope_sender), from_domain):
+        return True, "SPF pass, aligned envelope sender"
+    if not getattr(settings, "INBOUND_REQUIRE_SENDER_AUTH", True):
+        return True, "Sender authentication not required (INBOUND_REQUIRE_SENDER_AUTH=false)"
+    return False, "no SPF/DMARC pass recorded for the sender's domain"
 
 
 def sender_address(msg):
-    addresses = split_addresses(msg.from_email)
-    # from_email may be "Name <a@b>"; take the bracketed part when present.
-    m = re.search(r"<([^>]+)>", msg.from_email or "")
-    return (m.group(1) if m else (addresses[-1] if addresses else "")).lower()
+    """The parsed From addr-spec. Never derived from the display name."""
+    if msg.from_address:
+        return msg.from_address.strip().lower()
+    _name, addr = parseaddr(msg.from_email or "")
+    return addr.strip().lower()
 
 
 def ingest(msg: InboundEmail):
@@ -200,9 +239,11 @@ def ingest(msg: InboundEmail):
     case, suggested, verified = result.case, None, False
     note = result.note
     if case:
-        verified = case.cover.insurer.is_known_sender(sender) and not authentication_failed(msg)
+        known = case.cover.insurer.is_known_sender(sender)
+        authenticated, auth_reason = sender_authentication(msg)
+        verified = known and authenticated
         if not verified:
-            why = "DMARC failed" if authentication_failed(msg) else f"{sender} is not a known address of {case.cover.insurer}"
+            why = f"{sender or 'sender'} is not a known address of {case.cover.insurer}" if not known else auth_reason
             note = f"{note}. NOT attached: {why}. Link manually after checking the sender."
             suggested, case = case, None
 
@@ -221,7 +262,7 @@ def ingest(msg: InboundEmail):
                 subject=(msg.subject or "")[:1000],
                 body=msg.text or "",
                 body_html=msg.html or "",
-                headers=msg.headers,
+                headers={**msg.headers, "_from_address": sender, "_envelope_sender": msg.envelope_sender},
                 received_at=timezone.now(),
                 classification=CaseEmail.Classification.UNREVIEWED,
                 matched_by=result.method if case else M.NONE,
@@ -259,6 +300,7 @@ def link_email(email, case, actor, sender_checked=False):
     if case.status == S.DRAFT:
         raise ValueError("Replies cannot be linked to a draft that has not been sent.")
     known = case.cover.insurer.is_known_sender(sender_address(_as_msg(email)))
+    # Manual linking is the human check; an unknown sender needs explicit confirmation.
     if not known and not sender_checked:
         raise ValueError("The sender is not a known address of this insurer. Confirm you have verified the sender.")
     email.case = case
@@ -280,7 +322,7 @@ def dismiss_email(email, actor):
 
 
 def _as_msg(email):
-    return InboundEmail(from_email=email.from_email)
+    return InboundEmail(from_email=email.from_email, from_address=email.headers.get("_from_address", ""))
 
 
 def from_anymail(message, event_id=None):
@@ -294,6 +336,8 @@ def from_anymail(message, event_id=None):
     ]
     return InboundEmail(
         from_email=str(message.from_email) if message.from_email else (message.get("From") or ""),
+        from_address=message.from_email.addr_spec if message.from_email else "",
+        envelope_sender=message.envelope_sender or "",
         to=[a.addr_spec for a in message.to],
         cc=[a.addr_spec for a in message.cc],
         envelope_recipient=message.envelope_recipient or "",
