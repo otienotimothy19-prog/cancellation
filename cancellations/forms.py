@@ -7,7 +7,7 @@ from .models import CancellationCase, CaseDocument, Cover, Insurer, split_addres
 from .reasons import REASON_CHOICES, DocType
 from .services.documents import validate_uploaded_file
 
-DATE = forms.DateInput(attrs={"type": "date"})
+DATE = forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")  # browsers need ISO dates in type=date
 
 
 class CoverChoiceForm(forms.Form):
@@ -95,7 +95,9 @@ class CaseForm(forms.ModelForm):
 
 class DocumentForm(forms.Form):
     doc_type = forms.ChoiceField(label="Document type", choices=DocType.STAFF_UPLOAD_CHOICES, required=False)
-    source = forms.ChoiceField(choices=[("client", "Client"), ("staff", "Staff"), ("insurer", "Insurer")], initial="client")
+    # Who provided the file. Optional: New Cancellation only asks for the file and its type (defaults to client).
+    source = forms.ChoiceField(choices=[("client", "Client"), ("staff", "Staff"), ("insurer", "Insurer")],
+                               initial="client", required=False)
     file = forms.FileField(required=False)
 
     def __init__(self, *args, required=False, **kwargs):
@@ -110,6 +112,9 @@ class DocumentForm(forms.Form):
         elif self.required:
             self.add_error("file", "Choose a file to upload.")
         return data
+
+    def clean_source(self):
+        return self.cleaned_data.get("source") or "client"
 
     def clean_file(self):
         f = self.cleaned_data.get("file")

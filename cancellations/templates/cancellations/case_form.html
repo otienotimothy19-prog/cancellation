@@ -54,16 +54,8 @@
     </div>
   </section>
 
-  <section class="form-section" aria-labelledby="sec-b">
-    <div class="form-section__head"><span class="step">B</span>
-      <div><h2 id="sec-b">Client information</h2><p>The policyholder named on the cover.</p></div>
-    </div>
-    <div class="form-section__body">
-      <div id="client-new">{% include "components/field.html" with field=cover_form.client_name required=True %}</div>
-      <p id="client-existing" class="muted" style="margin:0" hidden>{% icon "info" 16 %} Client details come from the selected cover.</p>
-    </div>
-  </section>
-  {% else %}
+  {% endif %}
+  {% if not cover_form %}
   <section class="form-section">
     <div class="form-section__head"><span class="step">{% icon "folder" 16 %}</span>
       <div><h2>Cover</h2><p>{{ case.cover }}</p></div>
@@ -71,14 +63,23 @@
   </section>
   {% endif %}
 
-  <section class="form-section" aria-labelledby="sec-c">
-    <div class="form-section__head"><span class="step">{% if creating %}C{% else %}{% icon "file-text" 16 %}{% endif %}</span>
-      <div><h2 id="sec-c">Cancellation details</h2><p>Why the cover is being cancelled and from when.</p></div>
+  <section class="form-section" aria-labelledby="sec-b">
+    <div class="form-section__head"><span class="step">{% if creating %}B{% else %}{% icon "file-text" 16 %}{% endif %}</span>
+      <div><h2 id="sec-b">{% if cover_form %}Client &amp; cancellation{% else %}Cancellation details{% endif %}</h2>
+        <p>{% if cover_form %}The policyholder, why the cover is being cancelled and from when.{% else %}Why the cover is being cancelled and from when.{% endif %}</p></div>
     </div>
     <div class="form-section__body">
+      {% if cover_form %}
+      <div id="client-new" style="margin-bottom:16px">{% include "components/field.html" with field=cover_form.client_name required=True %}</div>
+      <p id="client-existing" class="muted" style="margin:0 0 16px" hidden>{% icon "info" 16 %} Client details come from the selected cover.</p>
+      {% endif %}
       <div class="form-grid">
         {% include "components/field.html" with field=case_form.reason_code label="Cancellation reason" required=True %}
-        {% include "components/field.html" with field=case_form.effective_date label="Effective date" required=True help="First day without cover. Must fall within the cover period." %}
+        {% if creating %}
+          {% include "components/field.html" with field=case_form.effective_date label="Effective date" required=True help=effective_help %}
+        {% else %}
+          {% include "components/field.html" with field=case_form.effective_date label="Effective date" required=True help="First day without cover. Must fall within the cover period." %}
+        {% endif %}
       </div>
       <div id="reason-needs" class="requirement" hidden>{% icon "info" 18 %}<span></span></div>
       <div class="form-grid" style="margin-top:16px" id="reason-extra">
@@ -92,25 +93,16 @@
   </section>
 
   {% if doc_form %}
-  <section class="form-section" aria-labelledby="sec-d">
-    <div class="form-section__head"><span class="step">D</span>
-      <div><h2 id="sec-d">Supporting documents</h2><p>Attach the document the reason requires. You can add more on the case page later.</p></div>
+  <section class="form-section" aria-labelledby="sec-c">
+    <div class="form-section__head"><span class="step">C</span>
+      <div><h2 id="sec-c">Document &amp; review</h2><p>Attach the supporting document, then check the essentials. “Save &amp; send” shows the exact email before anything goes out.</p></div>
     </div>
     <div class="form-section__body">
       <div class="form-grid">
+        <div class="span-all">{% include "components/dropzone.html" with field=doc_form.file label="Supporting document" %}</div>
         {% include "components/field.html" with field=doc_form.doc_type label="Document type" %}
-        {% include "components/field.html" with field=doc_form.source label="Provided by" %}
-        <div class="span-all">{% include "components/dropzone.html" with field=doc_form.file %}</div>
       </div>
-    </div>
-  </section>
-
-  <section class="form-section" aria-labelledby="sec-e">
-    <div class="form-section__head"><span class="step">E</span>
-      <div><h2 id="sec-e">Review &amp; submit</h2><p>Check the essentials. “Save &amp; send” shows the exact email before anything goes out.</p></div>
-    </div>
-    <div class="form-section__body">
-      <dl class="summary" id="summary">
+      <dl class="summary" id="summary" style="margin-top:20px">
         <div><dt>Client</dt><dd data-sum="client"></dd></div>
         <div><dt>Policy</dt><dd data-sum="policy"></dd></div>
         <div><dt>Insurer</dt><dd data-sum="insurer"></dd></div>

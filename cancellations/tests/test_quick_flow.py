@@ -99,3 +99,34 @@ class ReviewLinkTests(TestCase):
         anchor = f"{case.get_absolute_url()}#email-{reply.pk}"
         self.assertContains(self.client.get(reverse("cancellations:dashboard")), f'href="{anchor}"')
         self.assertContains(self.client.get(case.get_absolute_url()), f'id="email-{reply.pk}"')
+
+
+class SimplifiedFormTests(TestCase):
+    def setUp(self):
+        self.user = make_user()
+        self.client.force_login(self.user)
+        self.insurer = make_insurer()
+
+    def test_effective_date_defaults_to_today(self):
+        from django.utils import timezone
+
+        r = self.client.get(reverse("cancellations:case_create"))
+        self.assertEqual(r.context["case_form"]["effective_date"].value(), timezone.localdate())
+        self.assertContains(r, "Client &amp; cancellation")
+        self.assertContains(r, "Document &amp; review")
+        self.assertNotContains(r, 'name="doc-source"')
+
+    def test_upload_needs_only_file_and_type(self):
+        self.client.post(reverse("cancellations:case_create"), {
+            "cover-client_name": "Peter Otieno", "cover-policy_number": "MTR-778", "cover-insurer": self.insurer.pk,
+            "case-reason_code": "CLIENT_REQUEST", "case-effective_date": "2026-07-01",
+            "doc-doc_type": "SIGNED_REQUEST", "doc-file": pdf_upload(), "action": "draft",
+        })
+        doc = CancellationCase.objects.get().documents.get()
+        self.assertEqual(doc.source, "client")
+
+    def test_date_inputs_render_iso_values(self):
+        from django.utils import timezone
+
+        r = self.client.get(reverse("cancellations:case_create"))
+        self.assertContains(r, f'value="{timezone.localdate().isoformat()}"')
