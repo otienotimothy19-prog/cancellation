@@ -57,9 +57,9 @@ def _get(path, params, staff_email):
         if exc.code == 400 and body.get("message"):
             raise PortalError(body["message"]) from exc
         raise PortalError({
-            401: "The Production Portal rejected our token. Check PRODUCTION_PORTAL_TOKEN.",
+            401: "The Production Portal rejected our token. PRODUCTION_PORTAL_TOKEN here must equal CANCELLATIONS_API_TOKEN there.",
             403: "The Production Portal does not accept requests from this server (IP allow-list).",
-            404: "The Production Portal API is switched off (UNDERWRITING_API_TOKEN not set there) or the URL is wrong.",
+            404: "The Production Portal API is switched off (CANCELLATIONS_API_TOKEN not set there) or the URL is wrong.",
             429: "Too many searches in a minute. Wait a moment and try again.",
         }.get(exc.code, f"The Production Portal returned an error ({exc.code}).")) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:

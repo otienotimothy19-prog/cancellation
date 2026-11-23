@@ -136,7 +136,7 @@ It uses the portal's existing read-only API (`GET /api/underwriting/v1/records`)
 needs no changes. Only the search endpoint is called; client phone and email are never fetched.
 The portal records every lookup in its audit log, with the staff member's email in `X-Imoth-Staff`.
 The portal returns no premium, so the refund is still calculated only when staff enter the premium.
-If the portal restricts callers with `UNDERWRITING_API_IPS`, this app's outbound IP must be added there.
+The portal gives this app its own token (`CANCELLATIONS_API_TOKEN` there), which may only search. If the portal sets `CANCELLATIONS_API_IPS`, this app's outbound IP must be listed there.
 
 ### Reason codes
 
@@ -314,7 +314,7 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 | `SLA_CHECK_INTERVAL` | no | `300` | Seconds between SLA checks in the worker |
 | `APP_BASE_URL` | no | – | e.g. `https://cancellations.imoth.co.ke`; adds case links to reminder emails |
 | `PRODUCTION_PORTAL_URL` | no | – | Production Portal base URL (no trailing slash). With the token, adds "Find in Production Portal" to New Cancellation |
-| `PRODUCTION_PORTAL_TOKEN` | no | – | **Secret.** The portal's `UNDERWRITING_API_TOKEN` (32–128 chars) |
+| `PRODUCTION_PORTAL_TOKEN` | no | – | **Secret.** The portal's `CANCELLATIONS_API_TOKEN` (32–128 chars) |
 | `INBOUND_WEBHOOK_SECRET` | Postmark/Mailgun | – | `user:password` Basic auth on the inbound webhook |
 | `POSTMARK_SERVER_TOKEN` | Postmark | – | Server API token |
 | `MAILGUN_API_KEY` / `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun | – | API and webhook signing keys |
