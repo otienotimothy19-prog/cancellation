@@ -132,7 +132,9 @@ if env("AWS_STORAGE_BUCKET_NAME"):
             "access_key": env("AWS_ACCESS_KEY_ID"),
             "secret_key": env("AWS_SECRET_ACCESS_KEY"),
             "location": env("AWS_LOCATION", "case-documents"),
-            "default_acl": "private",
+            # No per-object ACL header: objects inherit the bucket's private default, and
+            # DigitalOcean's bucket-limited access keys reject PutObject with x-amz-acl.
+            "default_acl": None,
             "querystring_auth": True,
             "file_overwrite": False,
         },
