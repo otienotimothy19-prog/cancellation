@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}{{ case.reference }} · IMOTH Cancellations{% endblock %}
+{% block content %}
+<div class="row" style="align-items:center;margin-bottom:12px">
+  <h1 style="margin:0">{{ case.reference }}
+    <span class="badge s-{{ case.status }}">{{ case.get_status_display }}</span>
+    {% if case.is_stale %}<span class="badge stale">Stale</span>{% endif %}</h1>
+  <div style="text-align:right">
+    {% if case.status == "DRAFT" %}
+      <a class="btn secondary" href="{% url 'cancellations:case_edit' case.pk %}">Edit draft</a>
+      <form method="post" action="{% url 'cancellations:case_send' case.pk %}" style="display:inline" data-confirm="Send this cancellation request to {{ case.cover.insurer.cancellation_email }}?">
+        {% csrf_token %}<button class="btn" {% if blockers %}disabled title="Fix the items below first"{% endif %}>Send to insurer</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if blockers %}
+<div class="badbox"><strong>Cannot send yet:</strong><ul style="margin:4px 0 0">{% for b in blockers %}<li>{{ b }}</li>{% endfor %}</ul></div>
+{% endif %}
+
+<div class="grid">
+  <div class="card">
+    <h2>Cover</h2>
+    <dl class="kv">
+      <dt>Client</dt><dd>{{ case.cover.client_name }}</dd>
+      <dt>Policy number</dt><dd>{{ case.cover.policy_number }}</dd>
+      <dt>Insurer</dt><dd>{{ case.cover.insurer }} <span class="muted">({{ case.cover.insurer.cancellation_email }})</span></dd>
+      <dt>Vehicle / asset</dt><dd>{{ case.cover.asset_reference|default:"—" }}</dd>
+      <dt>Premium</dt><dd>{{ case.cover.premium }}</dd>
+      <dt>Period</dt><dd>{{ case.cover.start_date|date:"d M Y" }} – {{ case.cover.end_date|date:"d M Y" }}</dd>
+      <dt>Cover status</dt><dd>{{ case.cover.get_status_display }}</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <h2>Cancellation</h2>
+    <dl class="kv">
+      <dt>Reason</dt><dd>{{ case.reason_label|default:"—" }}</dd>
+      {% if case.reason_note %}<dt>Note</dt><dd>{{ case.reason_note|linebreaksbr }}</dd>{% endif %}
+      <dt>Effective date</dt><dd>{{ case.effective_date|date:"d M Y"|default:"—" }}</dd>
+      {% if case.outstanding_amount is not None %}<dt>Outstanding amount</dt><dd>{{ case.outstanding_amount }}</dd>{% endif %}
+      {% if case.notice_date %}<dt>Notice date</dt><dd>{{ case.notice_date|date:"d M Y" }}</dd>{% endif %}
+      {% if case.new_policy_number %}<dt>New policy number</dt><dd>{{ case.new_policy_number }}</dd>{% endif %}
+      {% if case.original_cover_reference %}<dt>Original cover ref.</dt><dd>{{ case.original_cover_reference }}</dd>{% endif %}
+      <dt>Reply-To</dt><dd class="muted">{{ case.reply_to_address }}</dd>
+      <dt>Created</dt><dd>{{ case.created_at|date:"d M Y H:i" }} by {{ case.created_by }}</dd>
+      {% if case.sent_at %}<dt>Sent</dt><dd>{{ case.sent_at|date:"d M Y H:i" }}</dd>{% endif %}
+    </dl>
+    {% if can_close %}
+    <form method="post" action="{% url 'cancellations:case_close' case.pk %}" style="margin-top:12px" data-confirm="Close {{ case.reference }}? Closed cases cannot be reopened.">{% csrf_token %}
+      <button class="btn secondary">Close case</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Documents</h2>
+  {% if required_docs %}
+    <p>Required: {% for label, ok in required_docs %}<span class="badge {% if ok %}s-CONFIRMED{% else %}s-REJECTED{% endif %}">{% if ok %}✓{% else %}✗{% endif %} {{ label }}</span> {% endfor %}</p>
+  {% endif %}
+  <table>
+    <thead><tr><th>Type</th><th>File</th><th>Source</th><th>Size</th><th>Added</th></tr></thead>
+    <tbody>
+    {% for d in documents %}
+      <tr><td>{{ d.get_type_display }}</td><td><a href="{% url 'cancellations:document_download' d.pk %}">{{ d.original_name }}</a></td>
+          <td>{{ d.get_source_display }}</td><td>{{ d.size|filesizeformat }}</td><td class="muted">{{ d.uploaded_at|date:"d M Y H:i" }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="muted">No documents yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if case.status != "CLOSED" %}
+  <form method="post" enctype="multipart/form-data" action="{% url 'cancellations:document_upload' case.pk %}" class="row" style="margin-top:10px">
+    {% csrf_token %}
+    <div>{{ doc_form.doc_type.label_tag }}{{ doc_form.doc_type }}</div>
+    <div>{{ doc_form.source.label_tag }}{{ doc_form.source }}</div>
+    <div>{{ doc_form.file.label_tag }}{{ doc_form.file }}</div>
+    <div style="flex:0"><button class="btn secondary">Upload</button></div>
+  </form>
+  {% endif %}
+</div>
+
+{% if preview_body %}
+<div class="card">
+  <h2>Email preview</h2>
+  <p class="muted">To: {{ case.cover.insurer.cancellation_email }}{% if case.cover.insurer.cc_addresses %} · Cc: {{ case.cover.insurer.cc_addresses|join:", " }}{% endif %} · Reply-To: {{ case.reply_to_address }}</p>
+  <p><strong>{{ preview_subject }}</strong></p>
+  <pre class="mail">{{ preview_body }}</pre>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Emails</h2>
+  {% for e in emails %}
+    <div style="border-top:1px solid var(--line);padding:10px 0">
+      <div class="row" style="align-items:center">
+        <div><strong>{% if e.direction == "OUT" %}→ Sent{% else %}← Received{% endif %}</strong>
+          <span class="muted">{{ e.received_at|date:"d M Y H:i" }} · {{ e.from_email }}</span></div>
+        <div style="text-align:right">
+          <span class="badge">{{ e.get_classification_display }}</span>
+          {% if e.direction == "IN" %}<span class="badge">{{ e.get_matched_by_display }}</span>{% endif %}
+        </div>
+      </div>
+      <div><strong>{{ e.subject }}</strong></div>
+      {% if e.match_note and e.direction == "IN" %}<div class="muted">{{ e.match_note }}</div>{% endif %}
+      <details {% if e.classification == "UNREVIEWED" %}open{% endif %}><summary class="muted">Message</summary><pre class="mail">{{ e.body|default:"(no text body)" }}</pre></details>
+      {% for d in e.documents.all %}<div>📎 <a href="{% url 'cancellations:document_download' d.pk %}">{{ d.original_name }}</a></div>{% endfor %}
+      {% for s in e.skipped_attachments %}<div class="muted">⚠ Attachment not stored: {{ s.filename }} — {{ s.reason }}</div>{% endfor %}
+      {% if e.direction == "IN" and e.classification == "UNREVIEWED" and case.status != "CLOSED" %}
+      <form method="post" action="{% url 'cancellations:email_review' e.pk %}" class="card" style="margin-top:8px;background:#fbfcfe">
+        {% csrf_token %}
+        <strong>Review this reply</strong>
+        <div class="radio-list">{{ review_form.classification }}</div>
+        {{ review_form.note.label_tag }}{{ review_form.note }}
+        <p><button class="btn">Record decision</button></p>
+      </form>
+      {% endif %}
+    </div>
+  {% empty %}<p class="muted">No emails yet.</p>{% endfor %}
+</div>
+
+<div class="card">
+  <h2>Audit log</h2>
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Status</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for ev in events %}
+      <tr><td class="muted">{{ ev.timestamp|date:"d M Y H:i:s" }}</td><td>{{ ev.actor|default:"system" }}</td><td>{{ ev.action }}</td>
+          <td>{% if ev.from_status != ev.to_status %}{{ ev.from_status|default:"—" }} → {{ ev.to_status }}{% else %}{{ ev.to_status }}{% endif %}</td>
+          <td>{{ ev.note }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

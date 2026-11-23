@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Log in · IMOTH Cancellations{% endblock %}
+{% block content %}
+<div class="card" style="max-width:380px;margin:40px auto">
+  <h1>Log in</h1>
+  <form method="post">{% csrf_token %}
+    {{ form.non_field_errors }}
+    <label for="id_username">Username</label>{{ form.username }}
+    <label for="id_password">Password</label>{{ form.password }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <p><button class="btn">Log in</button></p>
+  </form>
+</div>
+{% endblock %}

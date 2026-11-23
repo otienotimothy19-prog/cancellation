@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{% if creating %}New cancellation{% else %}Edit draft {{ case.reference }}{% endif %}</h1>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+  {% if cover_form %}
+  <div class="card">
+    <h2>1. Cover</h2>
+    {{ cover_form.non_field_errors }}
+    {% include "cancellations/_field.html" with field=cover_form.existing_cover %}
+    <div id="new-cover">
+      <p class="muted">…or enter a new cover:</p>
+      <div class="row">
+        <div>{% include "cancellations/_field.html" with field=cover_form.client_name %}</div>
+        <div>{% include "cancellations/_field.html" with field=cover_form.policy_number %}</div>
+        <div>{% include "cancellations/_field.html" with field=cover_form.insurer %}</div>
+      </div>
+      <div class="row">
+        <div>{% include "cancellations/_field.html" with field=cover_form.asset_reference %}</div>
+        <div>{% include "cancellations/_field.html" with field=cover_form.premium %}</div>
+        <div>{% include "cancellations/_field.html" with field=cover_form.start_date %}</div>
+        <div>{% include "cancellations/_field.html" with field=cover_form.end_date %}</div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="card"><h2>Cover</h2>{{ case.cover }}</div>
+  {% endif %}
+
+  <div class="card">
+    <h2>{% if creating %}2. {% endif %}Reason and effective date</h2>
+    {{ case_form.non_field_errors }}
+    <div class="row">
+      <div>{% include "cancellations/_field.html" with field=case_form.reason_code %}</div>
+      <div>{% include "cancellations/_field.html" with field=case_form.effective_date %}</div>
+    </div>
+    <div id="reason-needs" class="warnbox" style="display:none"></div>
+    <div class="row">
+      <div>{% include "cancellations/_field.html" with field=case_form.outstanding_amount %}</div>
+      <div>{% include "cancellations/_field.html" with field=case_form.notice_date %}</div>
+      <div>{% include "cancellations/_field.html" with field=case_form.new_policy_number %}</div>
+      <div>{% include "cancellations/_field.html" with field=case_form.original_cover_reference %}</div>
+    </div>
+    {% include "cancellations/_field.html" with field=case_form.reason_note %}
+  </div>
+
+  {% if doc_form %}
+  <div class="card">
+    <h2>3. Supporting document</h2>
+    <p class="muted">Attach the document the reason requires (you can add more on the case page). PDF, PNG, JPG, TIFF, DOC/DOCX, XLSX.</p>
+    {{ doc_form.non_field_errors }}
+    <div class="row">
+      <div>{% include "cancellations/_field.html" with field=doc_form.doc_type %}</div>
+      <div>{% include "cancellations/_field.html" with field=doc_form.source %}</div>
+      <div>{% include "cancellations/_field.html" with field=doc_form.file %}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <button class="btn">Save draft</button>
+  {% if case %}<a class="btn secondary" href="{{ case.get_absolute_url }}">Cancel</a>{% endif %}
+</form>
+{{ reason_meta|json_script:"reason-meta" }}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const meta = JSON.parse(document.getElementById("reason-meta").textContent);
+  const reason = document.querySelector("[name='case-reason_code']");
+  const extra = ["outstanding_amount", "notice_date", "new_policy_number", "original_cover_reference"];
+  function update() {
+    const m = meta[reason.value] || {fields: [], documents: []};
+    extra.forEach(f => {
+      const el = document.querySelector(`[data-field='${f}']`);
+      if (el) el.parentElement.style.display = m.fields.includes(f) || el.querySelector(".errorlist") ? "" : "none";
+    });
+    const box = document.getElementById("reason-needs");
+    const needs = [...m.fields.map(f => f.replaceAll("_", " ")), ...m.documents];
+    box.style.display = needs.length ? "" : "none";
+    box.textContent = needs.length ? "This reason requires: " + needs.join(", ") + "." : "";
+  }
+  reason.addEventListener("change", update); update();
+  const existing = document.querySelector("[name='cover-existing_cover']");
+  if (existing) {
+    const toggle = () => document.getElementById("new-cover").style.display = existing.value ? "none" : "";
+    existing.addEventListener("change", toggle); toggle();
+  }
+})();
+</script>
+{% endblock %}

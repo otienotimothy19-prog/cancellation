@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Unmatched inbox</h1>
+<p class="muted">Inbound emails that could not be matched to a case, or that matched but came from an unverified sender. Nothing here is linked automatically.</p>
+<div class="card">
+<table>
+  <thead><tr><th>Received</th><th>From</th><th>Subject</th><th>Why unmatched</th><th></th></tr></thead>
+  <tbody>
+  {% for e in emails %}
+    <tr><td class="muted">{{ e.received_at|date:"d M Y H:i" }}</td><td>{{ e.from_email }}</td><td>{{ e.subject|default:"(no subject)" }}</td>
+        <td class="muted">{{ e.match_note }}{% if e.suggested_case %}<br>Possible case: {{ e.suggested_case.reference }}{% endif %}</td>
+        <td><a class="btn secondary" href="{% url 'cancellations:unmatched_detail' e.pk %}">Review</a></td></tr>
+  {% empty %}<tr><td colspan="5" class="muted">Inbox is empty.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

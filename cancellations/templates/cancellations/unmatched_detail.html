@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Unmatched email</h1>
+<div class="card">
+  <dl class="kv">
+    <dt>From</dt><dd>{{ email.from_email }}</dd>
+    <dt>To</dt><dd>{{ email.to_emails }}</dd>
+    {% if email.cc_emails %}<dt>Cc</dt><dd>{{ email.cc_emails }}</dd>{% endif %}
+    <dt>Subject</dt><dd>{{ email.subject }}</dd>
+    <dt>Received</dt><dd>{{ email.received_at|date:"d M Y H:i" }}</dd>
+    <dt>Matching</dt><dd>{{ email.match_note }}</dd>
+  </dl>
+  <pre class="mail">{{ email.body|default:"(no text body)" }}</pre>
+  {% for d in documents %}<div>📎 <a href="{% url 'cancellations:document_download' d.pk %}">{{ d.original_name }}</a></div>{% endfor %}
+  {% for s in email.skipped_attachments %}<div class="muted">⚠ Attachment not stored: {{ s.filename }} — {{ s.reason }}</div>{% endfor %}
+</div>
+<div class="card">
+  <h2>Link to a case</h2>
+  {% if email.suggested_case %}<div class="warnbox">This looks like {{ email.suggested_case.reference }}, but it was not attached automatically: {{ email.match_note }}</div>{% endif %}
+  <form method="post">{% csrf_token %}
+    {{ form.non_field_errors }}
+    {{ form.case.label_tag }}{{ form.case }}{{ form.case.errors }}
+    <p><label style="font-weight:400">{{ form.sender_checked }} {{ form.sender_checked.label }}</label>
+      <span class="muted">Required when the sender is not one of the insurer's known addresses.</span></p>
+    <button class="btn">Link email</button>
+    <button class="btn danger" name="dismiss" value="1" formnovalidate data-confirm-click="Dismiss this email as unrelated?">Dismiss as unrelated</button>
+  </form>
+</div>
+{% endblock %}
