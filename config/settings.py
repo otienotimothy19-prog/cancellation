@@ -40,6 +40,8 @@ DEBUG = env_bool("DEBUG", False)
 SECRET_KEY = env("SECRET_KEY", "dev-insecure-key-change-me" if DEBUG else None, required=True)
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1" if DEBUG else "")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+# Friendly page (with a fresh Sign out button) when a form comes from an out-of-date tab.
+CSRF_FAILURE_VIEW = "cancellations.sso_views.csrf_failure"
 
 INSTALLED_APPS = [
     "django.contrib.admin",

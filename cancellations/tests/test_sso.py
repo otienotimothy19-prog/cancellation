@@ -122,3 +122,42 @@ class PortalSignInOffTests(TestCase):
         r = self.client.post(reverse("portal_sign_in"), {"token": "a.b"})
         self.assertContains(r, "not switched on", status_code=400)
         self.assertNotContains(self.client.get(reverse("login")), "Sign in with the Production Portal")
+
+
+@override_settings(**ON)
+class OpenTabsKeepWorkingTests(TestCase):
+    def setUp(self):
+        self.user = make_user("jane")
+        self.user.email = "staff@imoth.test"
+        self.user.save()
+
+    def test_second_portal_click_keeps_the_session(self):
+        self.client.post(reverse("portal_sign_in"), {"token": sso.make_token(claims())})
+        session_key = self.client.session.session_key
+        r = self.client.post(reverse("portal_sign_in"), {"token": sso.make_token(claims())})
+        self.assertRedirects(r, reverse("cancellations:dashboard"), fetch_redirect_response=False)
+        self.assertEqual(self.client.session.session_key, session_key)  # not signed in again
+
+    def test_out_of_date_sign_out_offers_a_fresh_button(self):
+        from django.test import Client
+
+        browser = Client(enforce_csrf_checks=True)
+        browser.force_login(self.user)
+        r = browser.post(reverse("logout"), {"csrfmiddlewaretoken": "stale" * 8})
+        self.assertContains(r, "That page was out of date", status_code=403)
+        token = r.context["csrf_token"]
+        self.assertIn("_auth_user_id", browser.session)  # nothing happened yet
+        browser.post(reverse("logout"), {"csrfmiddlewaretoken": str(token)})
+        self.assertNotIn("_auth_user_id", browser.session)
+
+    def test_other_out_of_date_forms_change_nothing(self):
+        from django.test import Client
+
+        browser = Client(enforce_csrf_checks=True)
+        browser.force_login(self.user)
+        r = browser.post(reverse("cancellations:insurer_create"), {"name": "X"},
+                         HTTP_REFERER="http://testserver/insurers/new/")
+        self.assertContains(r, "This page was out of date", status_code=403)
+        self.assertContains(r, 'href="http://testserver/insurers/new/"', status_code=403)
+        r = browser.post(reverse("cancellations:insurer_create"), {"name": "X"}, HTTP_REFERER="https://evil.test/")
+        self.assertNotContains(r, "evil.test", status_code=403)
