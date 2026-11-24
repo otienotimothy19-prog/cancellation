@@ -25,6 +25,7 @@ envs:
   - { key: AWS_SECRET_ACCESS_KEY, scope: RUN_TIME, type: SECRET }
   - { key: PRODUCTION_PORTAL_URL, scope: RUN_TIME, value: "" }  # set to the portal's https URL
   - { key: PRODUCTION_PORTAL_TOKEN, scope: RUN_TIME, type: SECRET }
+  - { key: CANCELLATIONS_SSO_SECRET, scope: RUN_TIME, type: SECRET }  # same value as the portal's
 
 services:
   - name: web

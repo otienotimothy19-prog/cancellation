@@ -32,6 +32,10 @@
         <input type="hidden" name="next" value="{{ next }}">
         <button class="btn btn-primary" style="width:100%;height:42px" data-busy-label="Signing in…">{% icon "shield-check" %}<span data-label>Sign in</span></button>
       </form>
+      {% if PORTAL_SSO_LOGIN_URL %}
+        <div class="auth__or"><span>or</span></div>
+        <a class="btn btn-secondary auth__sso" href="{{ PORTAL_SSO_LOGIN_URL }}">{% icon "log-in" %}<span>Sign in with the Production Portal</span></a>
+      {% endif %}
     </div>
   </section>
 </div>

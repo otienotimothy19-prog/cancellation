@@ -38,3 +38,10 @@ def navigation(request):
         "nav_unmatched": unmatched,
         "nav_to_review": to_review,
     }
+
+
+def portal_sign_in(request):
+    """The "Sign in with the Production Portal" link, when one sign-in is set up."""
+    from django.conf import settings
+
+    return {"PORTAL_SSO_LOGIN_URL": settings.PORTAL_SSO_LOGIN_URL}

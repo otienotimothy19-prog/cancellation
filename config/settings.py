@@ -76,6 +76,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "cancellations.context_processors.navigation",
+                "cancellations.context_processors.portal_sign_in",
             ],
         },
     },
@@ -246,3 +247,9 @@ PORTAL_CHECK_INTERVAL = int(env("PORTAL_CHECK_INTERVAL", "300"))  # seconds betw
 PORTAL_RECHECK_ACTIVE_HOURS = int(env("PORTAL_RECHECK_ACTIVE_HOURS", "1"))  # still active there: look again after
 PORTAL_RECHECK_NOT_FOUND_HOURS = int(env("PORTAL_RECHECK_NOT_FOUND_HOURS", "12"))  # not there (yet): look again after
 PORTAL_CHECK_DAYS = int(env("PORTAL_CHECK_DAYS", "60"))  # stop checking this many days after confirmation
+
+# One sign-in: the Production Portal posts a signed, single-use pass (see cancellations/services/sso.py).
+# The same value as the portal's CANCELLATIONS_SSO_SECRET; at least 32 characters, or the feature is off.
+CANCELLATIONS_SSO_SECRET = env("CANCELLATIONS_SSO_SECRET", "") or ""
+PORTAL_SSO_ENABLED = len(CANCELLATIONS_SSO_SECRET) >= 32
+PORTAL_SSO_LOGIN_URL = f"{PRODUCTION_PORTAL_URL}/cancellations/open" if PORTAL_SSO_ENABLED and PRODUCTION_PORTAL_URL else ""

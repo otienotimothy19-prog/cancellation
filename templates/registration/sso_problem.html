@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}Sign-in problem · IMOTH Cancellations{% endblock %}
+{% block shell %}
+<div class="auth auth--single">
+  <section class="auth__form">
+    <div class="auth__card">
+      <h1>Could not sign you in</h1>
+      <div class="alert alert--error" style="margin:16px 0">{% icon "x-circle" %}<div>{{ problem }}</div></div>
+      <div class="stack">
+        {% if PORTAL_SSO_LOGIN_URL %}<a class="btn btn-primary" href="{{ PORTAL_SSO_LOGIN_URL }}">{% icon "log-in" %}<span>Try again from the Production Portal</span></a>{% endif %}
+        <a class="btn btn-secondary" href="{% url 'login' %}">Sign in with a password</a>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

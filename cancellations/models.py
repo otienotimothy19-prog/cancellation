@@ -387,3 +387,15 @@ class MailboxState(models.Model):
 
     def __str__(self):
         return f"{self.folder} (last UID {self.last_uid})"
+
+
+class SsoPass(models.Model):
+    """Production Portal sign-in passes already used: each pass works once (kept until it expires)."""
+
+    jti = models.CharField(max_length=64, unique=True)
+    email = models.EmailField()
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.email} {self.used_at:%Y-%m-%d %H:%M}"

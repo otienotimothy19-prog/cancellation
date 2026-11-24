@@ -328,6 +328,7 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 | `APP_BASE_URL` | no | – | e.g. `https://cancellations.imoth.co.ke`; adds case links to reminder emails |
 | `PRODUCTION_PORTAL_URL` | no | – | Production Portal base URL (no trailing slash). With the token, adds "Find in Production Portal" to New Cancellation |
 | `PRODUCTION_PORTAL_TOKEN` | no | – | **Secret.** The portal's `CANCELLATIONS_API_TOKEN` (32–128 chars) |
+| `CANCELLATIONS_SSO_SECRET` | no | – | **Secret.** One sign-in with the Production Portal: the same 32+ character value as the portal's `CANCELLATIONS_SSO_SECRET`. Off when unset. |
 | `INBOUND_WEBHOOK_SECRET` | Postmark/Mailgun | – | `user:password` Basic auth on the inbound webhook |
 | `POSTMARK_SERVER_TOKEN` | Postmark | – | Server API token |
 | `MAILGUN_API_KEY` / `MAILGUN_WEBHOOK_SIGNING_KEY` | Mailgun | – | API and webhook signing keys |
@@ -360,3 +361,15 @@ Set `EMAIL_PROVIDER=postmark` or `mailgun` to send through their API and receive
 6. Run `python manage.py check_mailbox` in the console. It confirms the IMAP login and shows the auth headers. Then check that the Unmatched inbox page shows "Mailbox INBOX last checked … ago". The health check is at `/healthz`.
 
 App Platform's filesystem is ephemeral, so production **must** set `AWS_STORAGE_BUCKET_NAME`.
+
+## One sign-in with the Production Portal
+
+Staff sign in to the Production Portal (password and two-factor) and click **Cancellations** in its sidebar.
+The portal posts a signed pass to `/sso/portal/` that works once and expires after 60 seconds, and this app signs the same email address in.
+The login page also gets a **Sign in with the Production Portal** button.
+
+- **Set up:** generate one random value of at least 32 characters. Save it as the encrypted `CANCELLATIONS_SSO_SECRET` in **both** apps, and set `PRODUCTION_PORTAL_URL` here and `CANCELLATIONS_APP_URL` on the portal.
+- **Who gets in:** active members of the `cancellations` group whose email matches their portal email (case doesn't matter). Someone new is given an account without access; an admin adds them to the group in `/admin/`, then they click the link again.
+- **Not through the portal:** superuser accounts keep their own password sign-in, so a portal account can never open the Django admin. Password sign-in still works for everyone as a fallback.
+- **Rotating the secret:** change it in both apps together. Passes signed with the old value stop working at once.
+
