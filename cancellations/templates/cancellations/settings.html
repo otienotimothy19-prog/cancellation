@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load ui %}
+{% block title %}Settings · IMOTH Cancellations{% endblock %}
+{% block header_title %}Settings{% endblock %}
+{% block page_description %}Who can use Cancellations, and how the app is connected{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="card__head">
+    <h2>{% icon "users" %}Team access</h2>
+    <span class="count-pill" title="People with access">{{ with_access }}</span>
+  </div>
+  <div class="card__body settings-intro">
+    <p class="muted" style="margin:0">
+      {% if PORTAL_SSO_LOGIN_URL %}Anyone who opens Cancellations from the Production Portal gets an account here automatically, without access. Give them access below.{% else %}People sign in with a password. Add new accounts in <a href="/admin/auth/user/">/admin/</a>, then give them access below.{% endif %}
+      Administrators manage this page and keep their own password sign-in.
+    </p>
+    <form method="get" class="settings-search" role="search">
+      <label class="sr-only" for="people-q">Find a person</label>
+      <div class="input-icon">{% icon "search" 16 %}<input id="people-q" type="search" name="q" value="{{ q }}" placeholder="Find by name or email"></div>
+    </form>
+  </div>
+  {% if people %}
+  <div class="table-wrap">
+    <table class="table table--stack">
+      <thead><tr><th>Person</th><th>Signs in with</th><th>Last sign-in</th><th>Access</th><th><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+      {% for p in people %}
+        <tr>
+          <td data-label="Person"><div>
+            <div class="cell-main">{{ p.get_full_name|default:p.username }}{% if p == request.user %} <span class="muted small">(you)</span>{% endif %}</div>
+            <div class="cell-sub" style="overflow-wrap:anywhere">{{ p.email|default:"No email" }}</div>
+          </div></td>
+          <td data-label="Signs in with">{{ p.sign_in }}</td>
+          <td data-label="Last sign-in" class="nowrap">{% if p.last_login %}{{ p.last_login|date:"d M Y H:i" }}{% else %}<span class="muted">Never</span>{% endif %}</td>
+          <td data-label="Access" class="nowrap"><span>
+            {% if not p.is_active %}<span class="badge badge--muted">Switched off</span>
+            {% elif p.has_access %}<span class="badge badge--success">Has access</span>
+            {% else %}<span class="badge badge--warning">No access</span>{% endif %}
+            {% if p.is_superuser %}<span class="badge badge--info badge--plain">Administrator</span>{% endif %}
+          </span></td>
+          <td data-label="" class="right">
+            {% if p.is_active %}
+            <form method="post" action="{% url 'cancellations:settings_access' p.pk %}">{% csrf_token %}
+              {% if p.has_access %}
+                {% if p != request.user %}
+                <button class="btn btn-secondary btn-sm" name="action" value="revoke"
+                        data-confirm="Remove {{ p.email|default:p.username }}'s access to Cancellations?" data-confirm-title="Remove access" data-confirm-ok="Remove access" data-confirm-danger>Remove access</button>
+                {% endif %}
+              {% else %}
+                <button class="btn btn-primary btn-sm" name="action" value="grant">{% icon "check-circle" 15 %}Give access</button>
+              {% endif %}
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {% include "components/empty_state.html" with icon="users" title="Nobody found" text="Try another name or email." %}
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card__head"><h2>{% icon "plug" %}Connections</h2></div>
+  <div class="card__body">
+    <p class="muted" style="margin:0 0 14px">These are set as environment variables in App Platform. Secrets are never shown here.</p>
+    <ul class="connections">
+      {% for c in connections %}
+      <li class="connection">
+        <span class="connection__icon">{% icon c.icon 18 %}</span>
+        <div class="connection__text">
+          <strong>{{ c.name }}</strong>
+          {% if c.ok %}<span>{% if c.value %}<span class="mono">{{ c.value }}</span> · {% endif %}{{ c.detail }}</span>
+          {% else %}<span>{{ c.off }}</span>{% endif %}
+        </div>
+        {% if c.ok %}<span class="badge badge--success">On</span>{% else %}<span class="badge badge--muted">Off</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endblock %}

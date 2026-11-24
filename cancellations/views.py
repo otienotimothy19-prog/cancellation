@@ -549,3 +549,118 @@ def insurer_create(request):
 @cancellations_role_required
 def insurer_edit(request, pk):
     return _insurer_form(request, get_object_or_404(Insurer, pk=pk))
+
+
+# ---------------------------------------------------------------------------
+# Settings (administrators): who has access, and how the app is connected
+# ---------------------------------------------------------------------------
+def _admin_only(view):
+    """Superusers only. They manage access; the cancellations role alone is not enough."""
+    from functools import wraps
+
+    from django.contrib.auth.decorators import login_required
+    from django.core.exceptions import PermissionDenied
+
+    @login_required
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if not (request.user.is_active and request.user.is_superuser):
+            raise PermissionDenied("Only administrators can open Settings.")
+        return view(request, *args, **kwargs)
+
+    return wrapper
+
+
+def _connections():
+    """Read-only status of each connection. Never shows a secret, only whether one is set."""
+    from django.db.models import Max
+
+    polled = MailboxState.objects.aggregate(last=Max("last_polled_at"))["last"]
+    error = MailboxState.objects.exclude(last_error="").values_list("last_error", flat=True).first()
+    host = lambda url: url.split("//", 1)[-1].split("/", 1)[0] if url else ""  # noqa: E731
+    return [
+        {"name": "Insurer replies mailbox", "icon": "inbox",
+         "ok": bool(settings.MAILBOX_PASSWORD), "value": settings.MAILBOX_USER,
+         "detail": (f"Last checked {timezone.localtime(polled):%d %b %Y %H:%M}" if polled else "Not checked yet")
+                   + (f". Last problem: {error[:160]}" if error else ""),
+         "off": "MAILBOX_PASSWORD is not set, so replies are not collected."},
+        {"name": "Sending email", "icon": "send", "ok": settings.EMAIL_PROVIDER != "console",
+         "value": settings.DEFAULT_FROM_EMAIL, "detail": f"Through {settings.EMAIL_PROVIDER.title()}",
+         "off": "EMAIL_PROVIDER is console: emails are only written to the log."},
+        {"name": "Production Portal search", "icon": "search", "ok": portal.enabled(),
+         "value": host(settings.PRODUCTION_PORTAL_URL),
+         "detail": "Certificate lookup on New Cancellation and the cancellation check after confirmation",
+         "off": "Set PRODUCTION_PORTAL_URL and PRODUCTION_PORTAL_TOKEN."},
+        {"name": "Sign in with the Production Portal", "icon": "log-in",
+         "ok": bool(settings.PORTAL_SSO_LOGIN_URL), "value": host(settings.PRODUCTION_PORTAL_URL),
+         "detail": "Staff open Cancellations from the portal sidebar without a second password",
+         "off": "Set CANCELLATIONS_SSO_SECRET (the same value as the portal's) and PRODUCTION_PORTAL_URL."},
+        {"name": "Overdue reply alerts", "icon": "clock", "ok": bool(settings.SLA_ALERT_EMAIL),
+         "value": settings.SLA_ALERT_EMAIL, "detail": "Daily list of insurers that have not replied in time",
+         "off": "SLA_ALERT_EMAIL is not set."},
+    ]
+
+
+@_admin_only
+def settings_page(request):
+    from django.contrib.auth import get_user_model
+    from django.db.models import Exists, OuterRef
+
+    from django.contrib.auth.models import Group
+
+    from .permissions import ROLE_GROUP
+
+    User = get_user_model()
+    role = Group.objects.filter(name=ROLE_GROUP, user=OuterRef("pk"))
+    people = (User.objects.annotate(has_access=Exists(role))
+              .order_by("-is_active", "-has_access", "-is_superuser", "email", "username"))
+    q = request.GET.get("q", "").strip()
+    if q:
+        people = people.filter(Q(email__icontains=q) | Q(username__icontains=q)
+                               | Q(first_name__icontains=q) | Q(last_name__icontains=q))
+    people = list(people)
+    for p in people:
+        ways = []
+        if settings.PORTAL_SSO_LOGIN_URL and not p.is_superuser and p.email:
+            ways.append("Production Portal")
+        if p.has_usable_password():
+            ways.append("Password")
+        p.sign_in = " · ".join(ways) or "None"
+    return render(request, "cancellations/settings.html", {
+        "people": people, "q": q, "connections": _connections(),
+        "with_access": sum(1 for p in people if p.has_access and p.is_active),
+    })
+
+
+@require_POST
+@_admin_only
+def settings_access(request, pk):
+    """Give or remove the cancellations role."""
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    from .permissions import ROLE_GROUP
+
+    import logging
+
+    person = get_object_or_404(get_user_model(), pk=pk)
+    name = person.email or person.username
+    group, _ = Group.objects.get_or_create(name=ROLE_GROUP)
+    if request.POST.get("action") == "grant":
+        if not person.is_active:
+            messages.error(request, f"{name}'s account is switched off. Switch it on in /admin/ first.")
+        else:
+            person.groups.add(group)
+            messages.success(request, f"{name} can now use Cancellations.")
+    elif request.POST.get("action") == "revoke":
+        if person == request.user:
+            messages.error(request, "You cannot remove your own access.")
+        else:
+            person.groups.remove(group)
+            messages.success(request, f"{name} no longer has access to Cancellations.")
+    else:
+        messages.error(request, "Unknown action.")
+        return redirect("cancellations:settings")
+    logging.getLogger(__name__).info("Access %s for %s by %s", request.POST.get("action"), name, request.user)
+    return redirect("cancellations:settings")
+

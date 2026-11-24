@@ -24,6 +24,8 @@ urlpatterns = [
     path("insurers/", views.insurer_list, name="insurer_list"),
     path("insurers/new/", views.insurer_create, name="insurer_create"),
     path("insurers/<int:pk>/", views.insurer_edit, name="insurer_edit"),
+    path("settings/", views.settings_page, name="settings"),
+    path("settings/access/<int:pk>/", views.settings_access, name="settings_access"),
     path("exports/confirmed-cancellations.csv", exports.confirmed_csv, name="confirmed_csv"),
     path("api/confirmed-cancellations/", exports.confirmed_api, name="confirmed_api"),
 ]

@@ -15,6 +15,11 @@ NAV = [
     ("cancellations:insurer_list", "Insurers", "building", {"insurer_list", "insurer_create", "insurer_edit"}),
 ]
 
+# Only administrator (superuser) accounts manage who has access.
+ADMIN_NAV = [
+    ("cancellations:settings", "Settings", "settings", {"settings"}),
+]
+
 
 def navigation(request):
     user = getattr(request, "user", None)
@@ -30,10 +35,11 @@ def navigation(request):
                                           classification=CaseEmail.Classification.UNREVIEWED)
                  .exclude(case__status=S.CLOSED).count())
     badges = {"cancellations:dashboard": to_review, "cancellations:unmatched_list": unmatched}
+    items = NAV + (ADMIN_NAV if user.is_superuser else [])
     return {
         "nav_items": [
             {"url": url, "label": label, "icon": icon, "active": current in names, "badge": badges.get(url, 0)}
-            for url, label, icon, names in NAV
+            for url, label, icon, names in items
         ],
         "nav_unmatched": unmatched,
         "nav_to_review": to_review,
