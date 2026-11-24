@@ -603,6 +603,10 @@ def _connections():
 
 @_admin_only
 def settings_page(request):
+    return _settings_view(request)
+
+
+def _settings_view(request, add_form=None):
     from django.contrib.auth import get_user_model
     from django.db.models import Exists, OuterRef
 
@@ -626,10 +630,55 @@ def settings_page(request):
         if p.has_usable_password():
             ways.append("Password")
         p.sign_in = " · ".join(ways) or "None"
+    from .forms import TeamMemberForm
+
     return render(request, "cancellations/settings.html", {
         "people": people, "q": q, "connections": _connections(),
         "with_access": sum(1 for p in people if p.has_access and p.is_active),
-    })
+        "add_form": add_form or TeamMemberForm(), "add_open": add_form is not None,
+    }, status=400 if add_form is not None else 200)
+
+
+@require_POST
+@_admin_only
+def settings_add_member(request):
+    """Add a team member with access (or give an existing account access)."""
+    import logging
+
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    from .forms import TeamMemberForm
+    from .permissions import ROLE_GROUP
+
+    form = TeamMemberForm(request.POST)
+    if not form.is_valid():
+        return _settings_view(request, add_form=form)
+    email, name, password = (form.cleaned_data["email"], form.cleaned_data["full_name"].strip(),
+                             form.cleaned_data["password"])
+    person = form.existing
+    if person is None:
+        first, _, last = name.partition(" ")
+        person = get_user_model()(username=email, email=email, first_name=first, last_name=last)
+        if password:
+            person.set_password(password)
+        else:
+            person.set_unusable_password()
+        person.save()
+        done = "added"
+    else:
+        if name and not person.get_full_name():
+            person.first_name, _, person.last_name = name.partition(" ")
+        if password:
+            person.set_password(password)
+        person.is_active = True
+        person.save()
+        done = "already had an account and now has access"
+    person.groups.add(Group.objects.get_or_create(name=ROLE_GROUP)[0])
+    how = "their password" if person.has_usable_password() else "the Production Portal"
+    messages.success(request, f"{email} {done}. They can sign in with {how}.")
+    logging.getLogger(__name__).info("Team member %s %s by %s", email, done, request.user)
+    return redirect("cancellations:settings")
 
 
 @require_POST

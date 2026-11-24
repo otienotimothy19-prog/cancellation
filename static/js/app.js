@@ -169,3 +169,35 @@
     pill.querySelector("[data-file-clear]").addEventListener("click", function () { input.value = ""; update(); });
   });
 })();
+
+/* ---- Password fields: show / hide what was typed ---- */
+(function () {
+  "use strict";
+  const svg = (paths) => '<svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + paths + "</svg>";
+  const EYE = svg('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>');
+  const EYE_OFF = svg('<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>' +
+    '<path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>');
+  document.querySelectorAll("input[type=password]").forEach(function (input) {
+    const wrap = document.createElement("div");
+    wrap.className = "password-wrap";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "password-toggle";
+    function show(visible) {
+      input.type = visible ? "text" : "password";
+      btn.innerHTML = visible ? EYE_OFF : EYE;
+      btn.setAttribute("aria-label", visible ? "Hide password" : "Show password");
+      btn.title = btn.getAttribute("aria-label");
+      btn.setAttribute("aria-pressed", visible ? "true" : "false");
+    }
+    btn.addEventListener("click", function () { show(input.type === "password"); input.focus(); });
+    // Never submit or leave the page with the password showing.
+    if (input.form) input.form.addEventListener("submit", function () { show(false); });
+    window.addEventListener("pagehide", function () { show(false); });
+    show(false);
+    wrap.appendChild(btn);
+  });
+})();

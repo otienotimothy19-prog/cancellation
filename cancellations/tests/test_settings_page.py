@@ -78,3 +78,70 @@ class SettingsPageTests(TestCase):
         self.assertContains(page, '<td data-label="Signs in with">Password</td>')  # administrators: password only
         self.assertNotContains(page, "secret-pw-123")
         self.assertNotContains(page, "t" * 40)
+
+
+class AddTeamMemberTests(TestCase):
+    def setUp(self):
+        self.admin = make_user("boss")
+        self.admin.is_superuser = True
+        self.admin.save()
+        self.client.force_login(self.admin)
+        self.url = reverse("cancellations:settings_add_member")
+
+    def add(self, **data):
+        return self.client.post(self.url, data, follow=True)
+
+    def test_add_for_portal_sign_in(self):
+        from django.contrib.auth import get_user_model
+
+        r = self.add(email=" Mary.Atieno@IMOTH.co.ke ", full_name="Mary Atieno")
+        self.assertContains(r, "mary.atieno@imoth.co.ke added. They can sign in with the Production Portal.")
+        person = get_user_model().objects.get(email="mary.atieno@imoth.co.ke")
+        self.assertEqual((person.username, person.first_name, person.last_name),
+                         ("mary.atieno@imoth.co.ke", "Mary", "Atieno"))
+        self.assertFalse(person.has_usable_password())
+        self.assertTrue(has_cancellations_role(person))
+
+    def test_add_with_password(self):
+        from django.contrib.auth import get_user_model
+
+        r = self.add(email="clerk@imoth.co.ke", password="Kisumu-River-2026")
+        self.assertContains(r, "They can sign in with their password")
+        self.assertTrue(get_user_model().objects.get(email="clerk@imoth.co.ke").check_password("Kisumu-River-2026"))
+
+    def test_existing_account_gets_access(self):
+        person = make_user("you@imoth.co.ke", role=False)
+        person.email = "you@imoth.co.ke"
+        person.is_active = False
+        person.save()
+        r = self.add(email="YOU@imoth.co.ke")
+        self.assertContains(r, "already had an account and now has access")
+        person.refresh_from_db()
+        self.assertTrue(has_cancellations_role(person))
+
+    def test_errors_keep_the_form(self):
+        from django.contrib.auth import get_user_model
+
+        r = self.client.post(self.url, {"email": "not-an-email"})
+        self.assertEqual(r.status_code, 400)
+        self.assertContains(r, "Enter a valid email address", status_code=400)
+        r = self.client.post(self.url, {"email": "weak@imoth.co.ke", "password": "123"})
+        self.assertContains(r, "too short", status_code=400)
+        self.assertFalse(get_user_model().objects.filter(email="weak@imoth.co.ke").exists())
+
+    def test_administrator_password_not_changed_here(self):
+        self.admin.email = "boss@imoth.co.ke"
+        self.admin.save()
+        r = self.client.post(self.url, {"email": "boss@imoth.co.ke", "password": "Another-Long-Pass-99"})
+        self.assertContains(r, "Change an administrator", status_code=400)
+
+    def test_staff_cannot_add(self):
+        self.client.force_login(make_user("staff"))
+        self.assertEqual(self.client.post(self.url, {"email": "x@imoth.co.ke"}).status_code, 403)
+
+    def test_password_fields_get_a_show_button(self):
+        from django.contrib.staticfiles import finders
+
+        self.assertContains(self.client.get(reverse("cancellations:settings")), 'type="password"')
+        js = open(finders.find("js/app.js"), encoding="utf-8").read()
+        self.assertIn("Show password", js)

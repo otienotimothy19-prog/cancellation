@@ -505,3 +505,11 @@ dialog.modal::backdrop { background: rgba(16, 29, 58, .45); }
 .connection__icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; background: var(--neutral-50); color: var(--neutral); flex: none; }
 .connection__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .connection__text span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+
+/* Password show / hide */
+.password-wrap { position: relative; }
+.password-wrap input { width: 100%; padding-right: 44px; }
+.password-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 36px; height: 34px; display: grid; place-items: center;
+  border: 0; background: transparent; color: var(--muted); border-radius: 8px; cursor: pointer; }
+.password-toggle:hover { color: var(--ink); background: var(--neutral-50); }
+.password-toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }

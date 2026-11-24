@@ -315,3 +315,46 @@ class InsurerForm(forms.ModelForm):
         except TemplateSyntaxError as exc:
             raise ValidationError("The template has an error: %(error)s", params={"error": exc}) from exc
         return text
+
+
+class TeamMemberForm(forms.Form):
+    """Settings: add someone (or give an existing account access) before they first sign in."""
+
+    email = forms.EmailField(label="Email", max_length=150,
+                             help_text="Their Production Portal email, so signing in from the portal finds this account.",
+                             widget=forms.EmailInput(attrs={"autocomplete": "off", "placeholder": "name@imoth.co.ke"}))
+    full_name = forms.CharField(label="Full name", max_length=150, required=False,
+                                widget=forms.TextInput(attrs={"autocomplete": "off"}))
+    password = forms.CharField(
+        label="Password", required=False, strip=False,
+        help_text="Optional. Only for someone without a Production Portal account. Leave empty to sign in from the portal.",
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+
+    def clean_email(self):
+        return self.cleaned_data["email"].strip().lower()
+
+    def clean(self):
+        from django.contrib.auth import get_user_model
+        from django.contrib.auth.password_validation import validate_password
+
+        data = super().clean()
+        email, password = data.get("email"), data.get("password")
+        if not email:
+            return data
+        User = get_user_model()
+        matches = list(User.objects.filter(email__iexact=email)[:2])
+        if len(matches) > 1:
+            raise ValidationError(f"More than one account uses {email}. Fix this in /admin/ first.")
+        self.existing = matches[0] if matches else None
+        if self.existing is None and User.objects.filter(username__iexact=email).exists():
+            self.add_error("email", "An account with this username has a different email. Fix it in /admin/ first.")
+        if self.existing is not None and self.existing.is_superuser and password:
+            self.add_error("password", "Change an administrator's password in /admin/.")
+        if password:
+            first, _, last = (data.get("full_name") or "").partition(" ")
+            probe = self.existing or User(username=email, email=email, first_name=first, last_name=last)
+            try:
+                validate_password(password, probe)
+            except ValidationError as exc:
+                self.add_error("password", exc)
+        return data
